@@ -70,10 +70,10 @@ struct frame {
  * Put the table of "method" into the struct's member, and
  * call it whenever you needed. */
 struct page_operations {
-	bool (*swap_in) (struct page *, void *);
+	bool (*swap_in) (struct page *, void *); // "struct page_operations 안에 swap_in이라는 함수 포인터 멤버를 둔다"는 의미.
 	bool (*swap_out) (struct page *);
 	void (*destroy) (struct page *);
-	enum vm_type type;
+	enum vm_type type; // 이 타입에 의해 struct page의 union이 결정되도록 구성 가능.
 };
 
 #define swap_in(page, v) (page)->operations->swap_in ((page), v)
