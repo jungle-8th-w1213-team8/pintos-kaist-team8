@@ -2,6 +2,7 @@
 #define VM_VM_H
 #include <stdbool.h>
 #include "threads/palloc.h"
+#include "lib/kernel/hash.h"
 
 enum vm_type {
 	/* 페이지가 미초기화(uninitialized) 상태. */
@@ -48,7 +49,7 @@ struct page {
 	/* Your implementation */
 
 	/* 타입별 데이터는 union에 바인드됩니다.
-	 * 각 함수는 현재의 union을 자동으로 감지합니다. */
+	 * 각 함수는 현재의 union을 자동으로 감지합니다. - 이게 무슨 소리야? */
 	union {
 		struct uninit_page uninit;
 		struct anon_page anon;
@@ -85,6 +86,8 @@ struct page_operations {
  * 저희는 이 구조체에 대해 특정한 설계를 강제하지 않습니다.
  * 모든 설계는 여러분에게 달려 있습니다. */
 struct supplemental_page_table {
+    struct hash pages;       /* 해시 테이블 */
+    struct lock spt_lock;    /* 동시성 제어용 락 */
 };
 
 #include "threads/thread.h"
