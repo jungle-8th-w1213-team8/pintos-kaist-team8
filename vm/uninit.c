@@ -7,7 +7,14 @@
  * initialization callback that passed from vm_alloc_page_with_initializer
  * function.
  * */
-
+/* uninit.c: 미초기화(uninitialized) 페이지의 구현.
+ *
+ * 모든 페이지는 uninit 페이지로 생성된다. 
+ * 첫 번째 페이지 폴트가 발생하면,
+ * 핸들러 체인은 uninit_initialize(page->operations.swap_in)를 호출한다.
+ * uninit_initialize 함수는 페이지 객체를 초기화하여 
+ * 해당 페이지를 특정 페이지의 객체(anon, file, page_cache)로 변환(transmute)하고,
+ * vm_alloc_page_with_initializer 함수에서 전달된 초기화 콜백을 호출한다. */
 #include "vm/vm.h"
 #include "vm/uninit.h"
 
@@ -42,7 +49,7 @@ uninit_new (struct page *page, void *va, vm_initializer *init,
 	};
 }
 
-/* Initalize the page on first fault */
+/* 최초 폴트 발생 시 페이지를 초기화 */
 static bool
 uninit_initialize (struct page *page, void *kva) {
 	struct uninit_page *uninit = &page->uninit;
@@ -56,10 +63,10 @@ uninit_initialize (struct page *page, void *kva) {
 		(init ? init (page, aux) : true);
 }
 
-/* Free the resources hold by uninit_page. Although most of pages are transmuted
- * to other page objects, it is possible to have uninit pages when the process
- * exit, which are never referenced during the execution.
- * PAGE will be freed by the caller. */
+/* uninit_page가 보유(hold)했던 리소스를 해제. 
+ * 대부분의 페이지는 다른 페이지 객체로 변환되지만,
+ * 프로세스가 종료될 때, 실행 당시 한 번도 참조되지 않았던 uninit 페이지가 남았을 수 있으므로,
+ * PAGE는 호출자가 해제함. */
 static void
 uninit_destroy (struct page *page) {
 	struct uninit_page *uninit UNUSED = &page->uninit;

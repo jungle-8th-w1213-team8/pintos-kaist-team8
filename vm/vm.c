@@ -1,4 +1,4 @@
-/* vm.c: 가상 메모리 객체를 위한 일반(generic) 인터페이스입니다. */
+/* vm.c: 가상 메모리 객체를 위한 일반(generic) 인터페이스. */
 
 #include "threads/malloc.h"
 #include "vm/vm.h"
