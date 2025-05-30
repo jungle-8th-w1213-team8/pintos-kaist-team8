@@ -3,6 +3,9 @@
 #include "threads/malloc.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
+#include "kernel/hash.h"
+
+#include "threads/vaddr.h"
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -130,10 +133,20 @@ vm_handle_wp (struct page *page UNUSED) {
 
 /* Return true on success */
 bool
-vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
-		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
-	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
-	struct page *page = NULL;
+vm_try_handle_fault (struct intr_frame *f , void *addr ,
+		bool user , bool write , bool not_present) {
+	// page fault면 여기 실행. 즉 주어진 정보를 통해 spt에 있는 내용에서 찾아야한다.
+
+	if(!not_present) return false; // 존재하지도 않는 페이지는 handle 하면 안돼
+	if(!user && addr < USER_STACK) return false; // 커널 영역 접근 시도 차단
+	
+	
+	struct supplemental_page_table *spt = &thread_current ()->spt;
+	struct page *page = spt_find_page(spt, addr);
+
+	if(page == NULL) return false;
+
+	// 
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
 
@@ -174,6 +187,7 @@ vm_do_claim_page (struct page *page) {
 /* Initialize new supplemental page table */
 void
 supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
+	
 }
 
 /* Copy supplemental page table from src to dst */
