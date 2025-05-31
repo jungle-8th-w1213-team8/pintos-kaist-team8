@@ -24,7 +24,6 @@ bool
 file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
 	/* Set up the handler */
 	page->operations = &file_ops;
-
 	struct file_page *file_page = &page->file;
 }
 
@@ -32,18 +31,21 @@ file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
 static bool
 file_backed_swap_in (struct page *page, void *kva) {
 	struct file_page *file_page UNUSED = &page->file;
+	// 메인 메모리로 파일 내용을 가져오기
 }
 
 /* Swap out the page by writeback contents to the file. */
 static bool
 file_backed_swap_out (struct page *page) {
 	struct file_page *file_page UNUSED = &page->file;
+	// 디스크로 파일을 빼기. 대신, 쓴 기록은 전부 반영시켜야함
 }
 
-/* Destory the file backed page. PAGE will be freed by the caller. */
+/* Destroy the file backed page. PAGE will be freed by the caller. */
 static void
 file_backed_destroy (struct page *page) {
-	struct file_page *file_page UNUSED = &page->file;
+	struct file_page *file_page = &page->file;
+	// 쓰기 여부를 확인하자. 쓰이지 않았으면 할 것도 없음
 }
 
 /* Do the mmap */

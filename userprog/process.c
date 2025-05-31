@@ -18,8 +18,6 @@
 #include "threads/mmu.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
-#include "vm/vm.h"
-
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -129,7 +127,6 @@ initd (void *f_name) {
 #ifdef VM
 	supplemental_page_table_init (&thread_current ()->spt);
 #endif
-
 	process_init ();
 
 	if (process_exec (f_name) < 0)
@@ -244,12 +241,6 @@ static void __do_fork (void *aux) { // 여기서 aux가 부모.
 		goto error;
 #endif
 
-	/* TODO: Your code goes here.
-	 * TODO: Hint) To duplicate the file object, use `file_duplicate`
-	 * TODO:       in include/filesys/file.h. Note that parent should not return
-	 * TODO:       from the fork() until this function successfully duplicates
-	 * TODO:       the resources of parent.*/
-
 	// 파일 디스크립터 테이블 복제
 	for (int i = 0; i < FDCOUNT_LIMIT; i++) {
 		struct file *file = parent->fd_table[i];
@@ -278,6 +269,7 @@ error:
 
 void argument_stack(char **argv, int argc, void **rsp) {
 	// Save argument strings (character by character)
+	printf("기깔나게 stack에 아이템을 넣어보자\n");
 	for (int i = argc - 1; i >= 0; i--) {
 		int argv_len = strlen(argv[i]);
 		for (int j = argv_len; j >= 0; j--) {
@@ -287,6 +279,8 @@ void argument_stack(char **argv, int argc, void **rsp) {
 		}
 		argv[i] = *(char **)rsp; 		// 리스트에 rsp 주소 넣기
 	}
+	printf("기깔나게 stack에 아이템을 넣으려는데..?\n");
+
 
 	// Word-align padding
 	int pad = (int)*rsp % 8;
@@ -294,6 +288,8 @@ void argument_stack(char **argv, int argc, void **rsp) {
 		(*rsp)--;
 		**(uint8_t **)rsp = 0;
 	}
+	printf("기깔나게 stack에 패딩을 넣는데..?\n");
+
 
 	// Pointers to the argument strings
 	(*rsp) -= 8;
@@ -304,9 +300,14 @@ void argument_stack(char **argv, int argc, void **rsp) {
 		**(char ***)rsp = argv[i];
 	}
 
+	printf("기깔나게 stack에 arguements strings 넣는데..?\n");
+
 	// Return address
 	(*rsp) -= 8;
 	**(void ***)rsp = 0;
+
+	printf("기깔나게 stack에 return address 넣는데..?\n");
+
 }
 
 /* Switch the current execution context to the f_name.
@@ -339,7 +340,6 @@ int process_exec (void *f_name) {
         parse[count++] = token;
 	}
 	/*-- Project 2. User Programs 과제 --*/
-
 	/* And then load the binary */
 	success = load (file_name, &_if);
     /* If load failed, quit. */
@@ -347,7 +347,6 @@ int process_exec (void *f_name) {
     	palloc_free_page(file_name);
         return -1;
 	}
-
     //  Project 2. User Programs의 Argument Passing ~
     argument_stack(parse, count, &_if.rsp); // 함수 내부에서 parse와 rsp의 값을 직접 변경하기 위해 주소 전달.
     _if.R.rdi = count; // 첫 번째 인자: argc, 즉 프로그램에 전달된 인자의 개수를 레지스터 rdi에 저장 (시스템 V AMD64 ABI 규약???).
@@ -355,7 +354,7 @@ int process_exec (void *f_name) {
 
     // hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true); // 디버그용. 유저 스택을 헥스 덤프로 출력.
     // ~  Project 2. User Programs의 Argument Passing
-
+	printf("YOUR PROGRAM BOOM HERE \n");
     /* Start switched process. */
     do_iret(&_if);
     NOT_REACHED();
@@ -605,9 +604,6 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 		}
 	}
 
-	/* TODO: Your code goes here.
-	 * TODO: Implement argument passing (see project2/argument_passing.html). */
-
 	// project 2. user programs - rox ~
 	// 현재 스레드의 실행 중인 파일에 이 파일을 추가.
 	t->running = file;
@@ -615,7 +611,6 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 	// 지금 읽고 있는 실행 파일에 뭐 쓰면 안되니까.
 	file_deny_write(file); // 해당 파일을 쓰기 금지로 등록
 	// ~ project 2. user programs - rox
-
 	/* Set up stack. */
 	if (!setup_stack (if_))
 		goto done;
@@ -775,7 +770,7 @@ install_page (void *upage, void *kpage, bool writable) {
 	return (pml4_get_page (t->pml4, upage) == NULL
 			&& pml4_set_page (t->pml4, upage, kpage, writable));
 }
-//#else
+#else
 /* From here, codes will be used after project 3.
  * If you want to implement the function for only project 2, implement it on the
  * upper block. */
@@ -844,7 +839,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		f_page->zero_bytes = page_zero_bytes;
 
 		void *aux = f_page;
-		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
+		if (!vm_alloc_page_with_initializer (VM_FILE, pg_round_down(upage),
 					writable, lazy_load_segment, aux))
 			return false;
 
@@ -859,14 +854,15 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* Create a PAGE of stack at the USER_STACK. Return true on success. */
 static bool
 setup_stack (struct intr_frame *if_) {
-	bool success = false;
+	bool success = true;
 	void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
-
-	/* TODO: Map the stack on stack_bottom and claim the page immediately.
-	 * TODO: If success, set the rsp accordingly.
-	 * TODO: You should mark the page is stack. */
-	/* TODO: Your code goes here */
-
+	
+	if(!vm_alloc_page(VM_ANON, stack_bottom, 1)) return false;
+	if(!vm_claim_page(stack_bottom)) return false;
+	//struct page *stack_page = pg_round_down(stack_bottom);
+	//stack_page->stack = true;
+	if_->rsp = stack_bottom;
+	printf(" 다 함 \n");
 	return success;
 }
 #endif /* VM */

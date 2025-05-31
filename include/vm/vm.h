@@ -48,6 +48,8 @@ struct page {
 
 	/* Your implementation */
 	struct hash_elem page_hashelem;
+	bool writable;
+	bool stack;
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
@@ -114,5 +116,5 @@ bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
 
 bool hash_less_standard(struct hash_elem *, struct hash_elem *);
-
+void destructHashTable(struct hash_elem *he, void* aux);
 #endif  /* VM_VM_H */

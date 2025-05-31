@@ -63,22 +63,17 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 	switch(VM_TYPE(type))
 	{
 		case VM_ANON:
-			uninit_new(page, upage ,init, type, aux, anon_initializer);
+			uninit_new(page, pg_round_down(upage) ,init, type, aux, anon_initializer);
 			break;
 		case VM_FILE:
-			uninit_new(page, upage ,init, type, aux, file_backed_initializer);
+			uninit_new(page, pg_round_down(upage) ,init, type, aux, file_backed_initializer);
 			break;
 	}
-
+	page->writable = writable;
 	bool result = spt_insert_page(spt, page);
 	if(!result) goto err;
-
-		/* TODO: 페이지를 생성하고, VM 타입에 따라 초기화함수를 가져온 다음,
-		 * TODO: uninit_new를 호출하여 "uninit" 페이지 구조체를 생성하세요.
-		 * TODO: uninit_new를 호출한 후 필드를 수정해야 합니다. */
-
-
-		/* TODO: Insert the page into the spt. */
+	
+	return true;
 err:
 	return false;
 }
@@ -89,7 +84,7 @@ spt_find_page (struct supplemental_page_table *spt , void *va) {
 	// va를 검색조건으로 하는 특정한 page를 탐색 시도합니다.
 	// va를 find 함수에 쓰도록 하기 위해서 dummy page를 정의합니다.
 	struct page dummy;
-	dummy.va = va;
+	dummy.va = pg_round_down(va);
 
 	struct hash_elem *he = hash_find(&spt->main_table, &dummy.page_hashelem);
 	if(he == NULL) return NULL;
@@ -103,9 +98,9 @@ spt_find_page (struct supplemental_page_table *spt , void *va) {
 bool
 spt_insert_page (struct supplemental_page_table *spt ,struct page *page) {
 	// SPT에 페이지를 삽입합니다. hash_insert는 중복 삽입을 허용하지 않아 false의 여지가 있습니다.
-	int succ = true;
+	bool succ = true;
 	struct hash_elem *result = hash_insert(&spt->main_table, &page->page_hashelem);
-	if(result == NULL) succ = false;
+	if(result != NULL) succ = false;
 	return succ;
 }
 
@@ -197,7 +192,7 @@ bool
 vm_claim_page (void *va) {
 	if(va > USER_STACK) return false;
 
-	struct page *page = spt_find_page(&thread_current()->spt, va);
+	struct page *page = spt_find_page(&thread_current()->spt, pg_round_down(va));
 	if (page == NULL) return false;
 
 	return vm_do_claim_page (page);
@@ -215,7 +210,7 @@ vm_do_claim_page (struct page *page) {
 	frame->page = page;
 	page->frame = frame;
 
-	succ = pml4_set_page(&thread_current()->pml4, page, frame, 1);
+	succ = pml4_set_page(&thread_current()->pml4, pg_round_down(page->va), frame, 1);
 	if(!succ) return false;
 	return swap_in (page, frame->kva);
 }
@@ -247,9 +242,9 @@ supplemental_page_table_kill (struct supplemental_page_table *spt) {
 	// TODO 번역 : 파일에 대해 수정된 내용을 스토리지에 반영해야합니다.
 	// : writeback all the modified contents to the storage.
 
-	hash_destroy(&spt->main_table, destructHashTable);
+	//hash_destroy(&spt->main_table, destructHashTable);
 	// hash_destroy에 순회하면서 다 빼는거 포함 되어 있음. 먹일 콜백 함수를 writeback을 적용 하는 내용으로 정의해야해요
-	free(&spt->main_table);
+	//free(&spt->main_table);
 }
 
 
