@@ -47,7 +47,7 @@ struct page {
 	struct frame *frame;   /* Back reference for frame */
 
 	/* Your implementation */
-	struct list_elem p_elem;
+	struct hash_elem page_hashelem;
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
@@ -112,5 +112,7 @@ bool vm_alloc_page_with_initializer (enum vm_type type, void *upage,
 void vm_dealloc_page (struct page *page);
 bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
+
+bool hash_less_standard(struct hash_elem *, struct hash_elem *);
 
 #endif  /* VM_VM_H */
