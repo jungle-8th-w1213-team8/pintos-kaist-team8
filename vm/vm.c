@@ -68,32 +68,33 @@ err:
 /* Find VA from spt and return page. On error, return NULL. */
 struct page *
 spt_find_page (struct supplemental_page_table *spt , void *va) {
-	struct page *page = NULL;
-	
-	// hash_find 함수를 사용해서 spt에 검색 조건 va를 던진다.
-	// hash_find는 이러쿵 저러쿵 해서 find_elem을 부른다. find_elem은 못찾으면 NULL 반환.
-	// page에 대입하면 된다. NULL이 뜰 수도 있지?
-	page = hash_entry(hash_find(&spt->main_table, /*va를 hash_elem으로 생각하기*/), struct page, page_hashelem);
+	// va를 검색조건으로 하는 특정한 page를 탐색 시도합니다.
+	// va를 find 함수에 쓰도록 하기 위해서 dummy page를 정의합니다.
+	struct page dummy;
+	dummy.va = va;
+
+	struct hash_elem *he = hash_find(&spt->main_table, &dummy.page_hashelem);
+	if(he == NULL) return NULL;
+
+	struct page *page = hash_entry(he, struct page, page_hashelem);
+	// 과연 hash_entry가 실패 할 수 잇을 가요?!!#@
 	return page;
 }
 
 /* Insert PAGE into spt with validation. */
 bool
 spt_insert_page (struct supplemental_page_table *spt ,struct page *page) {
+	// SPT에 페이지를 삽입합니다. hash_insert는 중복 삽입을 허용하지 않아 false의 여지가 있습니다.
 	int succ = true;
-	// hash_insert 함수를 사용해서 spt에 넣을 물건 page를 던진다.
-	// hash_insert는 적절한 위치를 탐색하고, 중복 탐색도 합니다. (중복은 삽입 안됩니다!)
-	// insert_elem으로 삽입에 대한 핵심 로직이 이루어집니다.
 	struct hash_elem *result = hash_insert(&spt->main_table, &page->page_hashelem);
 	if(result == NULL) succ = false;
-
 	return succ;
 }
 
 void
 spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
-	// spt에서 page->va
-	
+	// SPT에서 페이지를 제거합니다. 이어서 해당 페이지의 메모리를 FREE 합니다.
+	hash_delete(&spt->main_table, &page->page_hashelem);
 	vm_dealloc_page (page);
 	return true;
 }
@@ -155,21 +156,14 @@ vm_try_handle_fault (struct intr_frame *f , void *addr ,
 		bool user , bool write , bool not_present) {
 	// page fault면 여기 실행. 즉 주어진 정보를 통해 spt에 있는 내용에서 찾아야한다.
 
+	// 우선, 적절한 Fault 호출인지부터 봐야 한다.
 	if(!not_present) return false; // 존재하지도 않는 페이지는 handle 하면 안돼
 	if(!user && addr < USER_STACK) return false; // 커널 영역 접근 시도 차단
-	
-
-	
-	
+	// if (!write) return false;
+	// 이건 지금 필요한지 잘 모르겠어요
 	struct supplemental_page_table *spt = &thread_current ()->spt;
 	struct page *page = spt_find_page(spt, addr);
-
 	if(page == NULL) return false;
-
-	// 
-	/* TODO: Validate the fault */
-	/* TODO: Your code goes here */
-
 	return vm_do_claim_page (page);
 }
 
@@ -185,25 +179,26 @@ vm_dealloc_page (struct page *page) {
 bool
 vm_claim_page (void *va UNUSED) {
 	struct page *page = NULL;
+	page = palloc_get_page(PAL_ZERO | PAL_USER);
 	/* TODO: Fill this function */
 	// vm에 
 	return vm_do_claim_page (page);
 }
 
 /* Claim the PAGE and set up the mmu. */
+// 받은 페이지를 Frame에 담고 PML4에 배치해야해요.
+// Frame을 배정 받지 못할 수 있고, PML4 배치에도 실패 할 수 있어요.
 static bool
 vm_do_claim_page (struct page *page) {
 	struct frame *frame = vm_get_frame ();
-	// mmu.c에는 pml4에 대한 내용을 다루고 있음, pml4에 실제로 올라가는 내용을 다루기
+	bool succ = true;
+	if(frame == NULL) return false;
 	
-
-	/* Set links */
 	frame->page = page;
 	page->frame = frame;
 
-	/* TODO: Insert page table entry to map page's VA to frame's PA. */
-	pml4_set_page(&thread_current()->pml4, page, frame, 1);
-
+	succ = pml4_set_page(&thread_current()->pml4, page, frame, 1);
+	if(!succ) return false;
 	return swap_in (page, frame->kva);
 }
 
@@ -217,20 +212,27 @@ supplemental_page_table_init (struct supplemental_page_table *spt ) {
 bool
 supplemental_page_table_copy (struct supplemental_page_table *dst,
 		struct supplemental_page_table *src ) {
-	// src에서 dst로 supplemental_page_table 복사하기.
 	if(hash_empty(&src->main_table)) return true; // 복사할게 없네용 : true 반환
 	
-	// 전체순회 박고 죄다 삽입시도 하는 거
+	struct hash_iterator i;
+	hash_first (&i, src);
+	while (hash_next (&i))
+	{
+		struct page *targetCopy = hash_entry(hash_cur (&i), struct page, page_hashelem);
+		hash_insert(&dst->main_table, &targetCopy->page_hashelem);
+	}
+	// 전체순회 박고 죄다 삽입시도.
 }
 
 /* Free the resource hold by the supplemental page table */
 void
 supplemental_page_table_kill (struct supplemental_page_table *spt) {
-	// spt를 free 하는 내용이 수행된다.
-	// 이 함수에 들어오는 spt가 비어있는지에 대한 보장이 없다. 그래서 전체 순회 박으면서 free부터 한다.
-	// 그리고 마지막에 kill the hash
-	/* TODO: Destroy all the supplemental_page_table hold by thread and
-	 * TODO: writeback all the modified contents to the storage. */
+	// TODO 번역 : 파일에 대해 수정된 내용을 스토리지에 반영해야합니다.
+	// : writeback all the modified contents to the storage.
+
+	hash_destroy(&spt->main_table, destructHashTable);
+	// hash_destroy에 순회하면서 다 빼는거 포함 되어 있음. 먹일 콜백 함수를 writeback을 적용 하는 내용으로 정의해야해요
+	free(&spt->main_table);
 }
 
 
@@ -239,4 +241,9 @@ bool hash_less_standard(struct hash_elem *A, struct hash_elem *B)
 	struct page *pageA = hash_entry(A, struct page, page_hashelem);
 	struct page *pageB = hash_entry(B, struct page, page_hashelem);
 	return pageA->va > pageB->va;
+}
+
+void destructHashTable()
+{
+	// BOOM BOOM SPT!!
 }
