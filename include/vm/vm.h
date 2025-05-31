@@ -3,6 +3,20 @@
 #include <stdbool.h>
 #include "threads/palloc.h"
 #include "kernel/hash.h"
+#include "filesys/off_t.h"
+
+/* 전역 변수 ~ */
+static struct list g_frame_table;
+static struct lock g_frame_lock;
+/* ~ 전역 변수 */
+
+struct file_lazy_aux {
+	struct file *file;
+	off_t ofs;
+	size_t read_bytes;
+	size_t zero_bytes;
+    bool writable; // for permission bit in page table
+};
 
 enum vm_type {
 	/* page not initialized */
@@ -48,6 +62,7 @@ struct page {
 
 	/* Your implementation */
 	struct hash_elem page_hashelem;
+	bool writable;
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */

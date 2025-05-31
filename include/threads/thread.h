@@ -110,6 +110,7 @@ struct thread {
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */
 	struct supplemental_page_table spt;
+	void *rsp; // 현재 액세스가 user인지 kernel인지 확인
 #endif
 
 	/* Owned by thread.c. */

@@ -778,11 +778,34 @@ install_page (void *upage, void *kpage, bool writable) {
  * If you want to implement the function for only project 2, implement it on the
  * upper block. */
 
-static bool
-lazy_load_segment (struct page *page, void *aux) {
+bool lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
+	ASSERT(page != NULL);
+	struct file_lazy_aux *fla = (struct file_lazy_aux *) aux;
+	ASSERT(fla != NULL);
+
+	// page->frame는 이미 할당되어 있음
+	uint8_t *kva = page->frame->kva;
+
+	// // 파일에서 read_bytes 만큼 읽어오기
+	// if (file_seek(fla->file, fla->ofs), 
+	//     file_read(fla->file, kva, fla->read_bytes) != (int) fla->read_bytes
+	// ){
+	// 	// 파일 읽기 실패
+	// 	return false;
+	// }
+
+    // file_read_at을 사용!
+    if (file_read_at(fla->file, kva, fla->read_bytes, fla->ofs) != (int) fla->read_bytes) {
+        return false;
+    }
+
+	// 나머지는 zero fill
+	memset(kva + fla->read_bytes, 0, fla->zero_bytes);
+
+	return true;
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -814,15 +837,23 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		void *aux = NULL;
+		struct file_lazy_aux* fla = (struct file_lazy_aux *)malloc(sizeof(struct file_lazy_aux));
+		fla->file = file;					 // 내용이 담긴 파일 객체
+		fla->ofs = ofs;					 // 이 페이지에서 읽기 시작할 위치
+		fla->read_bytes = page_read_bytes; // 이 페이지에서 읽어야 하는 바이트 수
+		fla->zero_bytes = page_zero_bytes; // 이 페이지에서 read_bytes만큼 읽고 공간이 남아 0으로 채워야 하는 바이트 수
+		fla->writable = writable;
+
 		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
-					writable, lazy_load_segment, aux))
+					writable, lazy_load_segment, fla))
 			return false;
 
 		/* Advance. */
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
 		upage += PGSIZE;
+
+		ofs += page_read_bytes;
 	}
 	return true;
 }
@@ -830,14 +861,32 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* Create a PAGE of stack at the USER_STACK. Return true on success. */
 static bool
 setup_stack (struct intr_frame *if_) {
-	bool success = false;
-	void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
+    bool success = false;
+    void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
 
 	/* TODO: Map the stack on stack_bottom and claim the page immediately.
 	 * TODO: If success, set the rsp accordingly.
 	 * TODO: You should mark the page is stack. */
 	/* TODO: Your code goes here */
 
-	return success;
+    // SPT에 anon page로 등록
+    success = vm_alloc_page(VM_ANON, stack_bottom, true);
+    if (!success)
+        return false;
+
+    // 바로 프레임 할당(클레임)
+    success = vm_claim_page(stack_bottom);
+    if (!success)
+        return false;
+	
+    // rsp를 USER_STACK으로 세팅
+    if_->rsp = USER_STACK;
+
+    return success;
 }
 #endif /* VM */
+
+
+    // (선택) page에 'stack'임을 표시하려면, SPT에서 찾아서 표시
+    // struct page *page = spt_find_page(&thread_current()->spt, stack_bottom);
+    // if (page != NULL) page->is_stack = true; // 만약 필드가 있다면
