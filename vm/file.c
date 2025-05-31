@@ -51,6 +51,14 @@ void *
 do_mmap (void *addr, size_t length, int writable,
 		struct file *file, off_t offset) {
 	// TODO : 적절하지 않은 내용에 대해 차단 후 본 루틴을 실행 할 것 !!
+	
+	// #1 주어진 매개변수의 유효성 검사
+
+
+	// #2 #1 통과시 alloc page 호출을 위한 적절 변환 진행
+
+
+	// #3 vm_alloc_page_with_initializer()
 }
 
 /* Do the munmap */

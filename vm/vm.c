@@ -7,6 +7,8 @@
 
 #include "threads/vaddr.h"
 #include "threads/mmu.h"
+#include "vm/anon.h"
+#include "vm/file.h"
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -48,19 +50,35 @@ bool
 vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		vm_initializer *init, void *aux) {
 
+	// 주의! upage는 page가 아니다.
 	ASSERT (VM_TYPE(type) != VM_UNINIT);
-
 	struct supplemental_page_table *spt = &thread_current ()->spt;
 
 	/* Check wheter the upage is already occupied or not. */
-	if (spt_find_page (spt, upage) == NULL) {
-		// 새로운 페이지를 만들어야 하는 경우, 직접 하지말고 vm_alloc_page 쓰세용
-		/* TODO: Create the page, fetch the initialier according to the VM type,
-		 * TODO: and then create "uninit" page struct by calling uninit_new. You
-		 * TODO: should modify the field after calling the uninit_new. */
+	if(spt_find_page(spt, upage) != NULL) goto err;
+	
+	// initalizer를 따로 빼놓고 case마다 배정해준다음 uninit에 배정때리는 방법이 없나..
+	struct page *page = malloc(sizeof (struct page));
+	// set the operations of page
+	switch(VM_TYPE(type))
+	{
+		case VM_ANON:
+			uninit_new(page, upage ,init, type, aux, anon_initializer);
+			break;
+		case VM_FILE:
+			uninit_new(page, upage ,init, type, aux, file_backed_initializer);
+			break;
+	}
+
+	bool result = spt_insert_page(spt, page);
+	if(!result) goto err;
+
+		/* TODO: 페이지를 생성하고, VM 타입에 따라 초기화함수를 가져온 다음,
+		 * TODO: uninit_new를 호출하여 "uninit" 페이지 구조체를 생성하세요.
+		 * TODO: uninit_new를 호출한 후 필드를 수정해야 합니다. */
+
 
 		/* TODO: Insert the page into the spt. */
-	}
 err:
 	return false;
 }
@@ -130,7 +148,6 @@ vm_get_frame (void) {
 	{
 		// victim page selection and swap out
 	}
-
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
 	return frame;
@@ -177,11 +194,12 @@ vm_dealloc_page (struct page *page) {
 
 /* Claim the page that allocate on VA. */
 bool
-vm_claim_page (void *va UNUSED) {
-	struct page *page = NULL;
-	page = palloc_get_page(PAL_ZERO | PAL_USER);
-	/* TODO: Fill this function */
-	// vm에 
+vm_claim_page (void *va) {
+	if(va > USER_STACK) return false;
+
+	struct page *page = spt_find_page(&thread_current()->spt, va);
+	if (page == NULL) return false;
+
 	return vm_do_claim_page (page);
 }
 
@@ -221,7 +239,6 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 		struct page *targetCopy = hash_entry(hash_cur (&i), struct page, page_hashelem);
 		hash_insert(&dst->main_table, &targetCopy->page_hashelem);
 	}
-	// 전체순회 박고 죄다 삽입시도.
 }
 
 /* Free the resource hold by the supplemental page table */
@@ -243,7 +260,9 @@ bool hash_less_standard(struct hash_elem *A, struct hash_elem *B)
 	return pageA->va > pageB->va;
 }
 
-void destructHashTable()
+void destructHashTable(struct hash_elem *he, void* aux)
 {
-	// BOOM BOOM SPT!!
+	// Boom the spt!!
+	// 테이블에 있는 아이템을 하나씩 끝장낸다.
+	// File을 갖고 있는 경우.. writeback을 모두 적용시켜놔야한다. 즉, swap out 다 때려줘야함
 }
