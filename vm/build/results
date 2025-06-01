@@ -24,7 +24,7 @@ pass tests/userprog/close-twice
 pass tests/userprog/close-bad-fd
 pass tests/userprog/read-normal
 pass tests/userprog/read-bad-ptr
-FAIL tests/userprog/read-boundary
+pass tests/userprog/read-boundary
 pass tests/userprog/read-zero
 pass tests/userprog/read-stdout
 pass tests/userprog/read-bad-fd

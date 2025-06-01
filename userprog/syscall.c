@@ -41,9 +41,25 @@ void check_address(const uint64_t *addr);
  * @param addr: 주소값.
  */
 void check_address(const uint64_t *addr){
-	struct thread *cur = thread_current();
-	if (addr == NULL || !(is_user_vaddr(addr)) || pml4_get_page(cur->pml4, addr) == NULL) 
+	if (addr == NULL || !(is_user_vaddr(addr)) )
 		exit(-1);
+}
+
+/**
+ * 해당 주소에 대한 페이지 매핑을 ensure. 없으면 page fault 발생시키기.
+ * 
+ * @param addr: 주소값.
+ * @param writable: 작성 가능 여부.
+ */
+bool ensure_user_page(void *addr, bool writable) {
+    struct thread *curr = thread_current();
+
+    // 이미 매핑되어 있으면 true
+    if (pml4_get_page(curr->pml4, addr) != NULL)
+        return true;
+
+    // 아니면 page fault로 살릴 수 있나?
+    return vm_try_handle_fault(NULL, addr, true, writable, true);
 }
 
 /**
@@ -230,6 +246,7 @@ int read(int fd, void *buffer, unsigned size){
 	// 1. 주소 범위 검증
 	check_address(buffer);
     check_address(buffer + size-1); 
+
     if (size == 0)
         return 0;
     if (buffer == NULL || !is_user_vaddr(buffer))
@@ -331,10 +348,11 @@ void syscall_handler (struct intr_frame *f UNUSED) {
 			// printf("SYS_SEEK [%d]", sys_call_number);
 			seek(f->R.rdi, f->R.rsi);
 			break;
-		// case SYS_TELL:
-		//	printf("SYS_HALT [%d]", sys_call_number);
-		// 	f->R.rax = tell(f->R.rdi);
-		// 	break;
+		case SYS_TELL:
+			printf("SYS_TELL [%d]", sys_call_number);
+			// f->R.rax = tell(f->R.rdi);
+			printf("tell() undefined! [%d]", sys_call_number);
+			break;
 		case SYS_CLOSE:
 			// printf("SYS_CLOSE [%d]", sys_call_number);
 			close(f->R.rdi);

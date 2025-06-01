@@ -822,8 +822,7 @@ bool lazy_load_segment (struct page *page, void *aux) {
  *
  * Return true if successful, false if a memory allocation error
  * or disk read error occurs. */
-static bool
-load_segment (struct file *file, off_t ofs, uint8_t *upage,
+static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		uint32_t read_bytes, uint32_t zero_bytes, bool writable) {
 	ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
 	ASSERT (pg_ofs (upage) == 0);
@@ -859,8 +858,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 }
 
 /* Create a PAGE of stack at the USER_STACK. Return true on success. */
-static bool
-setup_stack (struct intr_frame *if_) {
+static bool setup_stack (struct intr_frame *if_) {
     bool success = false;
     void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
 

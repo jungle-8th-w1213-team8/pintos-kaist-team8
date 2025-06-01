@@ -73,7 +73,8 @@ bool page_less(const struct hash_elem *a_,
 	const struct page *a = hash_entry(a_, struct page, page_hashelem);
 	const struct page *b = hash_entry(b_, struct page, page_hashelem);
 
-	return a->va < b->va;
+	// return a->va < b->va;
+	return a->va > b->va;
 }
 
 /* ~ 유틸, 헬퍼 */
@@ -262,8 +263,10 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED,
 		vm_stack_growth(addr);
 
 	page = spt_find_page(spt, addr);
-	if (page == NULL) // 페이지가 SPT에 없음
-		return false;
+	if (page == NULL) {
+		// 페이지가 SPT에 없음
+		return false;}
+	
 	if (write == 1 && page->writable == 0) // write 불가능한 페이지에 write를 요청함
 		return false;
 
