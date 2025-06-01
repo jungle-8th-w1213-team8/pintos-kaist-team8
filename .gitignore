@@ -9,7 +9,6 @@
 *.d
 *.o
 *.s
-*.S
 
 # MacOS
 .DS_Store
