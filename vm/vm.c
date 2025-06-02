@@ -45,6 +45,21 @@ static bool vm_do_claim_page (struct page *page);
 static struct frame *vm_evict_frame (void);
 
 /* 유틸, 헬퍼 ~ */
+static void* copy_aux(const void *src_aux) {
+    if (src_aux == NULL) 
+		return NULL;
+
+    // aux의 실제 크기는 타입별로 다를 수 있음
+    struct lazy_aux_data *copy = malloc(sizeof(struct lazy_aux_data));
+    memcpy(copy, src_aux, sizeof(struct lazy_aux_data));
+    return (void*)copy;
+}
+
+static void spt_destroy_action(struct hash_elem *e, void *aux UNUSED) {
+	struct page *page = hash_entry(e, struct page, page_hashelem);
+	vm_dealloc_page(page);
+}
+
 static bool inline is_target_stack(void* rsp, void* addr){
 	return (USER_STACK - (1 << 20) <= rsp - 8 && rsp - 8 == addr && addr <= USER_STACK) || (USER_STACK - (1 << 20) <= rsp && rsp <= addr && addr <= USER_STACK);
 }
@@ -82,8 +97,7 @@ bool page_less(const struct hash_elem *a_,
 /* Create the pending page object with initializer. If you want to create a
  * page, do not create it directly and make it through this function or
  * `vm_alloc_page`. */
-bool
-vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
+bool vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		vm_initializer *init, void *aux) {
 	// 참고: 여기서 enum vm_type type란, 얘가 미래에 될 타입.
 	ASSERT (VM_TYPE(type) != VM_UNINIT); 
@@ -119,7 +133,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		page->writable = writable;
 
 		/* TODO: Insert the page into the spt. */
-		bool is_inserted = (hash_insert (&spt->main_table, &page->page_hashelem) == NULL);
+		bool is_inserted = (NULL == hash_insert (&spt->main_table, &page->page_hashelem));
 		if (!is_inserted) {
 			free (page);
 			goto err;
@@ -134,42 +148,44 @@ err:
 }
 
 /* Find VA from spt and return page. On error, return NULL. */
-struct page *
-spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED){
+struct page * spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED){
     ASSERT (spt != NULL);
 	
     /* VA의 field set 기반으로 더미 struct page를 만듦 */
-	struct page* page_p = (struct page *)malloc(sizeof(struct page));
-    page_p->va = pg_round_down (va); // 페이지 경계에 맞도록 조정
+	struct page dummy_p;
+	dummy_p.va = pg_round_down (va);
+	// struct page* page_p = (struct page *)malloc(sizeof(struct page));
+    // dummy_p->va = pg_round_down (va); // 페이지 경계에 맞도록 조정
 
     /* 해시 테이블을 조회 */
-    struct hash_elem *e = hash_find (&spt->main_table, &page_p->page_hashelem);
+    struct hash_elem *e = hash_find (&spt->main_table, &dummy_p.page_hashelem);
     if (e == NULL){
-		free(page_p);
         return NULL; // 없을 경우
 	}
     return hash_entry (e, struct page, page_hashelem);
 }
 
 /* Insert PAGE into spt with validation. */
-bool
-spt_insert_page (struct supplemental_page_table *spt ,struct page *page) {
-	int succ = true;
+// 성공 시 true, 실패 시 false.
+bool spt_insert_page (struct supplemental_page_table *spt ,struct page *page) {
+	// bool succ = false;
 	// hash_insert 함수를 사용해서 spt에 넣을 물건 page를 던진다.
 	// hash_insert는 적절한 위치를 탐색하고, 중복 탐색도 합니다. (중복은 삽입 안됩니다!)
 	// insert_elem으로 삽입에 대한 핵심 로직이 이루어집니다.
-	struct hash_elem *result = hash_insert(&spt->main_table, &page->page_hashelem);
-	if(result == NULL) succ = false;
 
-	return succ;
+	// 안전 장치
+	ASSERT(spt && page);
+	ASSERT(pg_ofs(page->va) == 0);
+
+	// hash_insert()는 삽입 성공 시 NULL 리턴, 실패 시 이전의 struct hash_elem*를 리턴.
+	return (NULL==hash_insert(&spt->main_table, &page->page_hashelem));
 }
 
-void
-spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
+void spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
 	// spt에서 page->va
 	
-	vm_dealloc_page (page);
-	return true;
+	hash_delete(&spt->main_table, &page->page_hashelem);
+	vm_dealloc_page(page);
 }
 
 /* Get the struct frame, that will be evicted. */
@@ -337,29 +353,89 @@ vm_do_claim_page (struct page *page) {
 }
 
 /* Initialize new supplemental page table */
-void
-supplemental_page_table_init (struct supplemental_page_table *spt ) {
+void supplemental_page_table_init (struct supplemental_page_table *spt ) {
 	hash_init(&spt->main_table, page_hash, page_less, NULL);
+	lock_init(&spt->spt_lock);
 }
 
 /* Copy supplemental page table from src to dst */
-bool
-supplemental_page_table_copy (struct supplemental_page_table *dst,
+bool supplemental_page_table_copy (struct supplemental_page_table *dst,
 		struct supplemental_page_table *src ) {
-	// src에서 dst로 supplemental_page_table 복사하기.
-	if(hash_empty(&src->main_table)) return true; // 복사할게 없네용 : true 반환
-	
-	// 전체순회 박고 죄다 삽입시도 하는 거
+
+	if(hash_empty(&src->main_table)) 
+		return true;
+
+	struct hash_iterator i;
+	hash_first(&i, &src->main_table);
+	while (hash_next(&i)) {
+		struct page *src_page = hash_entry(hash_cur(&i), struct page, page_hashelem);
+		void *upage = src_page->va;
+		struct page *dst_page = spt_find_page(dst, upage);
+		enum vm_type type = page_get_type(src_page);
+		void* copied_aux = NULL;
+		struct lazy_aux_data *copied_file_aux =NULL;
+		vm_initializer *init = NULL;
+		struct page *file_page = NULL;
+
+		// 타입별로 생성 및 복사 (uninit_new, anon_initializer, file_backed_initializer 등)
+		// aux 복사, writable, etc. 
+		// (aux도 deep copy 필요. 파일 핸들/포인터는 file_reopen 등 별도 관리)
+
+		bool writable = src_page->writable;
+
+		// uninit page는 uninit_new로 생성, anon/file은 해당 initializer로 생성
+		switch (type) {
+		case VM_UNINIT:
+			init = src_page->uninit.init;
+			copied_aux = src_page->uninit.aux;
+			vm_alloc_page_with_initializer(VM_ANON, upage, writable, init, copied_aux);
+			break;
+
+		case VM_PAGE_CACHE: // (extra)
+			return false;
+
+		case VM_ANON:
+			// 이미 할당되어 실제 데이터를 가진 페이지면 vm_alloc_page()로 새 페이지 생성
+			
+			
+			break;
+		case VM_FILE:
+			// file-backed page도 마찬가지로 vm_alloc_page_with_initializer 사용
+			copied_file_aux = malloc(sizeof(struct lazy_aux_data));
+			copied_file_aux->file = src_page->file.file;
+			copied_file_aux->ofs = src_page->file.ofs;
+			copied_file_aux->read_bytes = src_page->file.read_bytes;
+			copied_file_aux->zero_bytes = src_page->file.zero_bytes;
+			if (!vm_alloc_page_with_initializer(type, upage, writable, NULL, copied_file_aux))
+				return false;
+			file_page = spt_find_page(dst, upage);
+			file_backed_initializer(file_page, type, NULL);
+			file_page->frame = src_page->frame;
+			pml4_set_page(thread_current()->pml4, file_page->va, src_page->frame->kva, src_page->writable);
+			continue;
+
+			// TODO: File-backed 페이지의 경우 write-back/dirty 플래그 등 관리해야
+
+			break;
+		default:
+			// 예외
+			return false;
+		}
+	}
+	return true;
 }
 
 /* Free the resource hold by the supplemental page table */
-void
-supplemental_page_table_kill (struct supplemental_page_table *spt) {
+void supplemental_page_table_kill (struct supplemental_page_table *spt) {
 	// spt를 free 하는 내용이 수행된다.
 	// 이 함수에 들어오는 spt가 비어있는지에 대한 보장이 없다. 그래서 전체 순회 박으면서 free부터 한다.
 	// 그리고 마지막에 kill the hash
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+
+	// 참고: hash_destroy를 넣지 말 것!!!
+	// spt_destroy_action 자체가 이미 destroy 및 free를 수행.
+	hash_clear(&spt->main_table, spt_destroy_action);
 }
 
 

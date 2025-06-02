@@ -23,7 +23,7 @@ file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
     ASSERT(page != NULL);
     ASSERT(type == VM_FILE);
 
-    struct file_lazy_aux *aux = (struct file_lazy_aux *) page->uninit.aux;
+    struct lazy_aux_data *aux = (struct lazy_aux_data *) page->uninit.aux;
 
     // 파일 seek은 thread-safe하지 않으므로 file_read_at을 사용!
 	// TODO: 오작동 시 걍 seek 쓸 것.

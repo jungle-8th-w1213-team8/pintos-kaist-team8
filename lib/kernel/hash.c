@@ -84,7 +84,16 @@ hash_clear (struct hash *h, hash_action_func *destructor) {
    any of the functions hash_clear(), hash_destroy(),
    hash_insert(), hash_replace(), or hash_delete(), yields
    undefined behavior, whether done in DESTRUCTOR or
-   elsewhere. */
+   elsewhere. 
+   
+   해시 테이블 H를 파괴합니다.
+
+	DESTRUCTOR가 non-null일 시, 해시의 각 요소에 대해 먼저 호출됩니다.
+	필요하다면 DESTRUCTOR는 해시 요소에 사용된 메모리를 해제할 수 있습니다.
+	그러나 hash_clear()가 실행되는 동안 hash_clear(), hash_destroy(),
+	hash_insert(), hash_replace(), hash_delete() 함수 중 하나라도 사용하여
+	해시 테이블 H를 수정하면, DESTRUCTOR 내부이든 다른 곳이든 상관없이
+	정의되지 않은 동작이 발생합니다.*/
 void
 hash_destroy (struct hash *h, hash_action_func *destructor) {
 	if (destructor != NULL)

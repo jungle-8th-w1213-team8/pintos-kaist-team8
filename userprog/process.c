@@ -235,8 +235,9 @@ static void __do_fork (void *aux) { // 여기서 aux가 부모.
 	process_activate (current);
 #ifdef VM
 	supplemental_page_table_init (&current->spt);
-	if (!supplemental_page_table_copy (&current->spt, &parent->spt))
+	if (!supplemental_page_table_copy (&current->spt, &parent->spt)){
 		goto error;
+	}
 #else
 	if (!pml4_for_each (parent->pml4, duplicate_pte, parent))
 		goto error;
@@ -783,7 +784,7 @@ bool lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
 	ASSERT(page != NULL);
-	struct file_lazy_aux *fla = (struct file_lazy_aux *) aux;
+	struct lazy_aux_data *fla = (struct lazy_aux_data *) aux;
 	ASSERT(fla != NULL);
 
 	// page->frame는 이미 할당되어 있음
@@ -836,7 +837,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		struct file_lazy_aux* fla = (struct file_lazy_aux *)malloc(sizeof(struct file_lazy_aux));
+		struct lazy_aux_data* fla = (struct lazy_aux_data *)malloc(sizeof(struct lazy_aux_data));
 		fla->file = file;					 // 내용이 담긴 파일 객체
 		fla->ofs = ofs;					 // 이 페이지에서 읽기 시작할 위치
 		fla->read_bytes = page_read_bytes; // 이 페이지에서 읽어야 하는 바이트 수

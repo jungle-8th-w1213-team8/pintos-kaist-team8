@@ -5,12 +5,14 @@
 #include "kernel/hash.h"
 #include "filesys/off_t.h"
 
+#include "threads/synch.h"
+
 /* 전역 변수 ~ */
 static struct list g_frame_table;
 static struct lock g_frame_lock;
 /* ~ 전역 변수 */
 
-struct file_lazy_aux {
+struct lazy_aux_data {
 	struct file *file;
 	off_t ofs;
 	size_t read_bytes;
@@ -104,6 +106,7 @@ struct page_operations {
  * All designs up to you for this. */
 struct supplemental_page_table {
 	struct hash main_table;
+	struct lock spt_lock;
 };
 
 #include "threads/thread.h"
