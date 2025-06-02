@@ -839,7 +839,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		f_page->zero_bytes = page_zero_bytes;
 
 		void *aux = f_page;
-		if (!vm_alloc_page_with_initializer (VM_FILE, pg_round_down(upage),
+		if (!vm_alloc_page_with_initializer (VM_FILE, upage,
 					writable, lazy_load_segment, aux))
 			return false;
 
@@ -859,10 +859,10 @@ setup_stack (struct intr_frame *if_) {
 	
 	if(!vm_alloc_page(VM_ANON, stack_bottom, 1)) return false;
 	if(!vm_claim_page(stack_bottom)) return false;
-	//struct page *stack_page = pg_round_down(stack_bottom);
-	//stack_page->stack = true;
-	if_->rsp = stack_bottom;
-	printf(" 다 함 \n");
+	struct page *stack_page = spt_find_page(&thread_current()->spt, stack_bottom);
+	
+	stack_page->stack = true;
+	if_->rsp = USER_STACK;
 	return success;
 }
 #endif /* VM */

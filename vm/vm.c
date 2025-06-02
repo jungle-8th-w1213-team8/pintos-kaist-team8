@@ -63,10 +63,10 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 	switch(VM_TYPE(type))
 	{
 		case VM_ANON:
-			uninit_new(page, pg_round_down(upage) ,init, type, aux, anon_initializer);
+			uninit_new(page, upage ,init, type, aux, anon_initializer);
 			break;
 		case VM_FILE:
-			uninit_new(page, pg_round_down(upage) ,init, type, aux, file_backed_initializer);
+			uninit_new(page, upage ,init, type, aux, file_backed_initializer);
 			break;
 	}
 	page->writable = writable;
@@ -137,12 +137,18 @@ vm_evict_frame (void) {
 static struct frame *
 vm_get_frame (void) {
 	struct frame *frame = NULL;
-	frame = palloc_get_page(PAL_USER);
+	frame = malloc(sizeof (struct frame));
 
-	if(frame == NULL)
+	frame->kva = palloc_get_page(PAL_USER);
+	if(frame->kva == NULL)
 	{
-		// victim page selection and swap out
+		free(frame);
+		frame = vm_evict_frame(); // victim page selection and swap out
+		if(frame == NULL) return NULL;
 	}
+
+	frame->page = NULL;
+
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
 	return frame;
@@ -192,7 +198,7 @@ bool
 vm_claim_page (void *va) {
 	if(va > USER_STACK) return false;
 
-	struct page *page = spt_find_page(&thread_current()->spt, pg_round_down(va));
+	struct page *page = spt_find_page(&thread_current()->spt, va);
 	if (page == NULL) return false;
 
 	return vm_do_claim_page (page);
@@ -210,7 +216,7 @@ vm_do_claim_page (struct page *page) {
 	frame->page = page;
 	page->frame = frame;
 
-	succ = pml4_set_page(&thread_current()->pml4, pg_round_down(page->va), frame, 1);
+	succ = pml4_set_page(&thread_current()->pml4, pg_round_down(page->va), pg_round_down(frame->kva), 1);
 	if(!succ) return false;
 	return swap_in (page, frame->kva);
 }
@@ -219,14 +225,16 @@ vm_do_claim_page (struct page *page) {
 void
 supplemental_page_table_init (struct supplemental_page_table *spt ) {
 	hash_init(&spt->main_table, hash_bytes, hash_less_standard, NULL);
+	lock_init(&spt->spt_lock);
 }
 
 /* Copy supplemental page table from src to dst */
 bool
 supplemental_page_table_copy (struct supplemental_page_table *dst,
 		struct supplemental_page_table *src ) {
-	if(hash_empty(&src->main_table)) return true; // 복사할게 없네용 : true 반환
+	if(hash_empty(&src->main_table)) return true;
 	
+	lock_acquire(&src->spt_lock);
 	struct hash_iterator i;
 	hash_first (&i, src);
 	while (hash_next (&i))
@@ -234,6 +242,7 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 		struct page *targetCopy = hash_entry(hash_cur (&i), struct page, page_hashelem);
 		hash_insert(&dst->main_table, &targetCopy->page_hashelem);
 	}
+	lock_release(&src->spt_lock);
 }
 
 /* Free the resource hold by the supplemental page table */

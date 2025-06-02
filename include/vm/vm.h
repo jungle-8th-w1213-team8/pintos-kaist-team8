@@ -91,6 +91,7 @@ struct page_operations {
  * All designs up to you for this. */
 struct supplemental_page_table {
 	struct hash main_table;
+	struct lock spt_lock;
 };
 
 #include "threads/thread.h"
