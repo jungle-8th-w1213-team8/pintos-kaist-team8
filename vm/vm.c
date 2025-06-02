@@ -72,8 +72,6 @@ bool page_less(const struct hash_elem *a_,
 ){
 	const struct page *a = hash_entry(a_, struct page, page_hashelem);
 	const struct page *b = hash_entry(b_, struct page, page_hashelem);
-
-	// return a->va < b->va;
 	return a->va > b->va;
 }
 
@@ -118,7 +116,6 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		}
 		page->writable = writable;
 
-		/* TODO: Insert the page into the spt. */
 		// hash_insert 대신 spt_insert_page 사용하게끔 수정 :
 		bool is_inserted = spt_insert_page(spt, page);
 		if (!is_inserted) {
@@ -380,16 +377,16 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 		{
 			//vm_initializer *init = srcPage->file;
 			//void *aux = srcPage->file;
-			if(!vm_alloc_page_with_initializer(type, upage, writable, init, aux))
-			{
-				return false;
-			}
-			else
-			{
-				if(!vm_claim_page(upage)) return false;
-				struct page *newPage = spt_find_page(dst, upage);
-				memcpy(newPage->frame->kva, srcPage->frame->kva, PGSIZE);
-			}
+			// if(!vm_alloc_page_with_initializer(type, upage, writable, init, aux))
+			// {
+			// 	return false;
+			// }
+			// else
+			// {
+			// 	if(!vm_claim_page(upage)) return false;
+			// 	struct page *newPage = spt_find_page(dst, upage);
+			// 	memcpy(newPage->frame->kva, srcPage->frame->kva, PGSIZE);
+			// }
 		}
 	}
 	return true;
