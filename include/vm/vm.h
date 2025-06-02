@@ -5,6 +5,10 @@
 #include "kernel/hash.h"
 #include "threads/synch.h"
 
+struct list g_frame_table;
+struct lock g_frame_lock;
+
+
 enum vm_type {
 	/* page not initialized */
 	VM_UNINIT = 0,

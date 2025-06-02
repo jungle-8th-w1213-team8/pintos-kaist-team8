@@ -269,7 +269,6 @@ error:
 
 void argument_stack(char **argv, int argc, void **rsp) {
 	// Save argument strings (character by character)
-	printf("기깔나게 stack에 아이템을 넣어보자\n");
 	for (int i = argc - 1; i >= 0; i--) {
 		int argv_len = strlen(argv[i]);
 		for (int j = argv_len; j >= 0; j--) {
@@ -279,17 +278,13 @@ void argument_stack(char **argv, int argc, void **rsp) {
 		}
 		argv[i] = *(char **)rsp; 		// 리스트에 rsp 주소 넣기
 	}
-	printf("기깔나게 stack에 아이템을 넣으려는데..?\n");
-
-
+	
 	// Word-align padding
 	int pad = (int)*rsp % 8;
 	for (int k = 0; k < pad; k++) {
 		(*rsp)--;
 		**(uint8_t **)rsp = 0;
 	}
-	printf("기깔나게 stack에 패딩을 넣는데..?\n");
-
 
 	// Pointers to the argument strings
 	(*rsp) -= 8;
@@ -300,14 +295,9 @@ void argument_stack(char **argv, int argc, void **rsp) {
 		**(char ***)rsp = argv[i];
 	}
 
-	printf("기깔나게 stack에 arguements strings 넣는데..?\n");
-
 	// Return address
 	(*rsp) -= 8;
 	**(void ***)rsp = 0;
-
-	printf("기깔나게 stack에 return address 넣는데..?\n");
-
 }
 
 /* Switch the current execution context to the f_name.
@@ -354,7 +344,6 @@ int process_exec (void *f_name) {
 
     // hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true); // 디버그용. 유저 스택을 헥스 덤프로 출력.
     // ~  Project 2. User Programs의 Argument Passing
-	printf("YOUR PROGRAM BOOM HERE \n");
     /* Start switched process. */
     do_iret(&_if);
     NOT_REACHED();
