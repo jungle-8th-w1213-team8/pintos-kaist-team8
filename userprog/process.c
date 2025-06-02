@@ -855,11 +855,6 @@ static bool setup_stack (struct intr_frame *if_) {
     bool success = false;
     void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
 
-	/* TODO: Map the stack on stack_bottom and claim the page immediately.
-	 * TODO: If success, set the rsp accordingly.
-	 * TODO: You should mark the page is stack. */
-	/* TODO: Your code goes here */
-
     // SPT에 anon page로 등록
     success = vm_alloc_page(VM_ANON, stack_bottom, true);
     if (!success)
@@ -876,8 +871,3 @@ static bool setup_stack (struct intr_frame *if_) {
     return success;
 }
 #endif /* VM */
-
-
-    // (선택) page에 'stack'임을 표시하려면, SPT에서 찾아서 표시
-    // struct page *page = spt_find_page(&thread_current()->spt, stack_bottom);
-    // if (page != NULL) page->is_stack = true; // 만약 필드가 있다면

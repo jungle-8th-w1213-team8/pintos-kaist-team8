@@ -360,25 +360,15 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 		void *upage = srcPage->va;
 		bool writable = srcPage->writable;
 
+		// VM_UNINIT 쪽 삽입을 허용을 안하는데 이 쪽 분기를 타겠냐고~
 		if(type == VM_UNINIT)
 		{
-			vm_initializer *init = srcPage->uninit.init;
-			void *aux = srcPage->uninit.aux;
-			if(!vm_alloc_page_with_initializer(type, upage, writable, init, aux))
-			{
-				return false;
-			}
-			else
-			{
-
-				if(!vm_claim_page(upage)) return false;
-
-				struct page *newPage = spt_find_page(dst, upage);
-				memcpy(newPage->frame->kva, srcPage->frame->kva, PGSIZE);
-			}
+			//vm_initializer *init = srcPage->uninit.init;
+			//void *aux = srcPage->uninit.aux;
 		}
 		else if(type == VM_ANON)
 		{
+			// 실제 작동 여기만 함 . 딴데 보지 마세요
 			if(!vm_alloc_page(type, upage, writable)) return false;
 			if(!vm_claim_page(upage)) return false;
 			struct page *newPage = spt_find_page(dst, upage);
@@ -386,11 +376,20 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 				memcpy(newPage->frame->kva, srcPage->frame->kva, PGSIZE);
 			
 		}
-		else if(srcPage->operations->type == VM_FILE)
+		else if(type == VM_FILE)
 		{
-			
-			printf("이런 미친 FILE이다!! \n");
-
+			//vm_initializer *init = srcPage->file;
+			//void *aux = srcPage->file;
+			if(!vm_alloc_page_with_initializer(type, upage, writable, init, aux))
+			{
+				return false;
+			}
+			else
+			{
+				if(!vm_claim_page(upage)) return false;
+				struct page *newPage = spt_find_page(dst, upage);
+				memcpy(newPage->frame->kva, srcPage->frame->kva, PGSIZE);
+			}
 		}
 	}
 	return true;
@@ -399,9 +398,6 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 /* Free the resource hold by the supplemental page table */
 void
 supplemental_page_table_kill (struct supplemental_page_table *spt) {
-	// spt를 free 하는 내용이 수행된다.
-	// 이 함수에 들어오는 spt가 비어있는지에 대한 보장이 없다. 그래서 전체 순회 박으면서 free부터 한다.
-	// 그리고 마지막에 kill the hash
-	/* TODO: Destroy all the supplemental_page_table hold by thread and
-	 * TODO: writeback all the modified contents to the storage. */
+	hash_clear(&spt->main_table, NULL);
+	// temp. 좀더 정성껏 작성 할 것. 특히 파일 있는경우..
 }

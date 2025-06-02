@@ -67,9 +67,6 @@ bool ensure_user_page(void *addr, bool writable) {
  * 
  */
 void halt(void){
-	// printf("NOW HALTING!\n");
-	// for(int i=0;i<100000000;i++)
-	// 	timer_msleep(2);
     power_off();
 }
 
@@ -145,7 +142,8 @@ int exec(char *file_name) {
 	check_address(file_name);
 	
 	// 새로운 페이지 한 장(4KB)을 제로필 후 확보.
-	char *page_copied = palloc_get_page(PAL_ZERO); 
+	// June 02 : User Zero 동시 옵션으로 업데이트, 도움이 되느지는 잘 모르..겟ㅇ어요
+	char *page_copied = palloc_get_page(PAL_USER | PAL_ZERO); 
 	if (page_copied == NULL)
 		exit(-1); // 할당 실패 시 즉시 종료.
 	
