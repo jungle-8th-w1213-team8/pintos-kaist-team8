@@ -775,22 +775,36 @@ install_page (void *upage, void *kpage, bool writable) {
  * If you want to implement the function for only project 2, implement it on the
  * upper block. */
 
-static bool
-lazy_load_segment (struct page *page, void *aux) {
-	// 받아온 aux에 뭔가를 할 것
-	struct file_page *aux_page = (struct file_page *) aux;
-	page->file = *aux_page;
-
-	// 파일을 메모리에 실어야합니다.
-	file_seek(aux_page->file, aux_page->offset);
-	//if(file_read(aux_page->file, page->frame->kva, aux_page->offset) != aux_page->read_bytes)
-	// file_read.. and memset..
-
-	/* TODO: Load the segment from the file */
-	/* TODO: This called when the first page fault occurs on address VA. */
-	/* TODO: VA is available when calling this function. */
-}
-
+ bool
+ lazy_load_segment (struct page *page, void *aux) {
+	 /* TODO: Load the segment from the file */
+	 /* TODO: This called when the first page fault occurs on address VA. */
+	 /* TODO: VA is available when calling this function. */
+	 ASSERT(page != NULL);
+	 struct file_page *fla = (struct file_page *) aux;
+	 ASSERT(fla != NULL);
+ 
+	 // page->frame는 이미 할당되어 있음
+	 uint8_t *kva = page->frame->kva;
+ 
+	 // // 파일에서 read_bytes 만큼 읽어오기
+	 // if (file_seek(fla->file, fla->ofs), 
+	 //     file_read(fla->file, kva, fla->read_bytes) != (int) fla->read_bytes
+	 // ){
+	 // 	// 파일 읽기 실패
+	 // 	return false;
+	 // }
+ 
+	 // file_read_at을 사용!
+	 if (file_read_at(fla->file, kva, fla->read_bytes, fla->offset) != (int) fla->read_bytes) {
+		 return false;
+	 }
+ 
+	 // 나머지는 zero fill
+	 memset(kva + fla->read_bytes, 0, fla->zero_bytes);
+ 
+	 return true;
+ }
 /* Loads a segment starting at offset OFS in FILE at address
  * UPAGE.  In total, READ_BYTES + ZERO_BYTES bytes of virtual
  * memory are initialized, as follows:
@@ -837,16 +851,17 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		f_page->offset = ofs;
 		f_page->read_bytes = page_read_bytes;
 		f_page->zero_bytes = page_zero_bytes;
+		f_page->writable = writable;
 
-		void *aux = f_page;
 		if (!vm_alloc_page_with_initializer (VM_FILE, upage,
-					writable, lazy_load_segment, aux))
+					writable, lazy_load_segment, f_page))
 			return false;
 
 		/* Advance. */
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
 		upage += PGSIZE;
+		ofs += page_read_bytes;
 	}
 	return true;
 }
@@ -859,9 +874,7 @@ setup_stack (struct intr_frame *if_) {
 	
 	if(!vm_alloc_page(VM_ANON, stack_bottom, 1)) return false;
 	if(!vm_claim_page(stack_bottom)) return false;
-	struct page *stack_page = spt_find_page(&thread_current()->spt, stack_bottom);
 	
-	stack_page->stack = true;
 	if_->rsp = USER_STACK;
 	return success;
 }
