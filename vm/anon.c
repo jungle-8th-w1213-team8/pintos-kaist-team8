@@ -43,10 +43,18 @@ anon_swap_in (struct page *page, void *kva) {
 static bool
 anon_swap_out (struct page *page) {
 	struct anon_page *anon_page = &page->anon;
+
+		page->frame->page = NULL;
+		page->frame = NULL;
+	
+		pml4_clear_page(thread_current()->pml4, page->va);
+	
 }
 
 /* Destroy the anonymous page. PAGE will be freed by the caller. */
 static void
 anon_destroy (struct page *page) {
+    uint64_t *pml4 = thread_current()->pml4;
 	struct anon_page *anon_page = &page->anon;
+    pml4_clear_page(pml4, page->va);
 }

@@ -357,6 +357,9 @@ void syscall_handler (struct intr_frame *f UNUSED) {
 			// printf("SYS_CLOSE [%d]", sys_call_number);
 			close(f->R.rdi);
 			break;
+		case SYS_MMAP:
+			printf("Should implement mmap \n");
+			break;
 		default:
 			printf("FATAL: UNDEFINED SYSTEM CALL!, %d", sys_call_number);
 			exit(-1);

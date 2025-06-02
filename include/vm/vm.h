@@ -4,6 +4,7 @@
 #include "threads/palloc.h"
 #include "kernel/hash.h"
 #include "filesys/off_t.h"
+#include "threads/synch.h"
 
 /* 전역 변수 ~ */
 static struct list g_frame_table;
@@ -103,6 +104,7 @@ struct page_operations {
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
 struct supplemental_page_table {
+	struct lock spt_lock;
 	struct hash main_table;
 };
 

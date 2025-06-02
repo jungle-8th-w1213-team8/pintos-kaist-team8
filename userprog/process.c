@@ -18,6 +18,7 @@
 #include "threads/mmu.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
+#include "vm/vm.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -226,7 +227,6 @@ static void __do_fork (void *aux) { // 여기서 aux가 부모.
      *  rax 레지스터를 0으로 설정하여 '자식 프로세스임'을 알린다.
     */
 	if_.R.rax = 0;
-
 	/* 2. Duplicate PT */
 	current->pml4 = pml4_create();
 	if (current->pml4 == NULL)
@@ -384,13 +384,6 @@ int process_wait (tid_t child_tid UNUSED) {
 	timer_msleep(1);
 	list_remove(&child->child_elem);
 	sema_up(&child->exit_sema);
-
-
-	// for(int i=0;i<100000000;i++)
-	// 	for(int j=0;j<10;j++);
-	// timer_msleep(2000); // 2000 ms면 뭐라도 하겠지
-	// 
-
 	return exit_status;
 }
 
