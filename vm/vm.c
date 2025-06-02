@@ -340,6 +340,7 @@ vm_do_claim_page (struct page *page) {
 void
 supplemental_page_table_init (struct supplemental_page_table *spt ) {
 	hash_init(&spt->main_table, page_hash, page_less, NULL);
+	lock_init(&spt->spt_lock);
 }
 
 /* Copy supplemental page table from src to dst */
@@ -348,8 +349,21 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 		struct supplemental_page_table *src ) {
 	// src에서 dst로 supplemental_page_table 복사하기.
 	if(hash_empty(&src->main_table)) return true; // 복사할게 없네용 : true 반환
-	
-	// 전체순회 박고 죄다 삽입시도 하는 거
+
+	lock_acquire(&src->spt_lock);
+	struct hash_iterator i;
+	hash_first (&i, src);
+
+	while (hash_next (&i))
+	{
+		struct page *targetCopy = hash_entry(hash_cur (&i), struct page, page_hashelem);
+		struct page *newPage = malloc(sizeof(struct page));
+		memcpy(newPage, targetCopy, sizeof(struct page));
+		hash_insert(&dst->main_table, &newPage->page_hashelem);
+	}
+	lock_release(&src->spt_lock);
+	printf("copy done!\n");
+	return true;
 }
 
 /* Free the resource hold by the supplemental page table */
