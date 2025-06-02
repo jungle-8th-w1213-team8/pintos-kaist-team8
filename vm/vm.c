@@ -86,7 +86,9 @@ spt_find_page (struct supplemental_page_table *spt , void *va) {
 	struct page dummy;
 	dummy.va = pg_round_down(va);
 
+	lock_acquire(&spt->spt_lock);
 	struct hash_elem *he = hash_find(&spt->main_table, &dummy.page_hashelem);
+	lock_release(&spt->spt_lock);
 	if(he == NULL) return NULL;
 
 	struct page *page = hash_entry(he, struct page, page_hashelem);
@@ -243,6 +245,7 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 		hash_insert(&dst->main_table, &targetCopy->page_hashelem);
 	}
 	lock_release(&src->spt_lock);
+	// dst는 fork 과정에서 생성중인 테이블이니 어차피 접근에 대한 염려를 하지 않아도 된다.
 }
 
 /* Free the resource hold by the supplemental page table */

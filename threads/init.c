@@ -115,8 +115,16 @@ main (void) {
 #ifdef VM
 	vm_init ();
 #endif
-
-	printf ("Boot complete.\n");
+	printf("______________________\n");
+	printf("< ");
+	printf ("CTos BOOT COMPLETE!!!");
+	printf(" >\n");
+	printf("----------------------\n");
+	printf("        \\   ^__^\n");
+	printf("         \\  (oo)\\_______\n");
+	printf("            (__)\\       )\\/\\\n");
+	printf("                ||----w |\n");
+	printf("                ||     ||\n");
 
 	/* Run actions specified on kernel command line. */
 	run_actions (argv); // 얘가 바이너리를 시작!!
