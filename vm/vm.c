@@ -83,15 +83,15 @@ bool page_less(const struct hash_elem *a_,
  * page, do not create it directly and make it through this function or
  * `vm_alloc_page`. */
 bool
-vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
+vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable, //새로운 uninit 페이지 생성 + uninit_new()로 
 		vm_initializer *init, void *aux) {
 	// 참고: 여기서 enum vm_type type란, 얘가 미래에 될 타입.
 	ASSERT (VM_TYPE(type) != VM_UNINIT); 
 
-	struct supplemental_page_table *spt = &thread_current ()->spt;
+	struct supplemental_page_table *spt = &thread_current ()->spt; //초기화 SPT에 등록(중복 방지)
 
 	/* Check wheter the upage is already occupied or not. */
-	if (spt_find_page (spt, upage) == NULL) {
+	if (spt_find_page (spt, upage) == NULL) { //SPT(해시 테이블)에서 VA로 페이지 찾기
 		/* TODO: Create the page, fetch the initialier according to the VM type,
 		 * TODO: and then create "uninit" page struct by calling uninit_new. You
 		 * TODO: should modify the field after calling the uninit_new. */
@@ -153,7 +153,7 @@ spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED){
 
 /* Insert PAGE into spt with validation. */
 bool
-spt_insert_page (struct supplemental_page_table *spt ,struct page *page) {
+spt_insert_page (struct supplemental_page_table *spt ,struct page *page) { //페이지를 SPT에 삽입(중복방지)
 	int succ = true;
 	// hash_insert 함수를 사용해서 spt에 넣을 물건 page를 던진다.
 	// hash_insert는 적절한 위치를 탐색하고, 중복 탐색도 합니다. (중복은 삽입 안됩니다!)
@@ -232,6 +232,19 @@ vm_stack_growth (void *addr UNUSED) {
 	// 이 함수의 행위 책임 :
 		// 스택 성장 처리 (ok)
 		// 스택 성장 필요 유무를 확인 (?)
+		void *new_page_addr = pg_round_down(addr);
+
+		 /* 스택은 익명 페이지로 할당 (VM_ANON) */
+		 bool success = vm_alloc_page_with_initializer(
+			VM_ANON,        // 타입: 익명 페이지
+			new_page_addr,  // 페이지의 가상주소
+			true,           // 쓰기 가능
+			NULL,           // 초기화 함수 (필요 없음)
+			NULL            // aux 데이터 (필요 없음)
+		);
+	  
+		if (!success)
+		  PANIC("vm_stack_growth 실패! 메모리 부족?");
 }
 
 /* Handle the fault on write_protected page */
@@ -332,13 +345,12 @@ vm_do_claim_page (struct page *page) {
 	// printf("vm_do_claim_page()의 pml4_set_page 결과 - %d\n",is_page_set);
 	bool is_swapped_in = swap_in(page, frame->kva);
 	// printf("vm_do_claim_page()의 swap_in 결과 - %d\n",is_swapped_in);
-
 	return is_swapped_in;
 }
 
 /* Initialize new supplemental page table */
 void
-supplemental_page_table_init (struct supplemental_page_table *spt ) {
+supplemental_page_table_init (struct supplemental_page_table *spt ) { //SPT 해시 테이블 초기화
 	hash_init(&spt->main_table, page_hash, page_less, NULL);
 }
 
