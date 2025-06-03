@@ -108,6 +108,7 @@ static void validate_user_memory(const void *buffer, size_t size, bool writable)
 }
 
 /**
+ * 주의! 시스템 콜 중 write() 등에 사용!
  * 유저가 전달한 주소가 읽기 가능한 메모리 영역인지 확인.
  * 주어진 주소 범위내 각 페이지가 유저 공간에 속하며 페이지 폴트를 통해 접근이 가능한지 확인.
  * 접근 불가능한 경우 프로세스를 종료.
@@ -120,6 +121,7 @@ void validate_read_buffer(const void *user_addr, size_t size) {
 }
 
 /**
+ * 주의! 시스템 콜 중 read() 등에 사용!
  * 유저가 전달한 주소가 쓰기 가능한 메모리 영역인지 확인.
  * 주어진 주소 범위내 각 페이지가 유저 공간에 속하고 페이지 폴트를 통해 접근 가능하며 쓰기도 가능한지 확인.
  * 하나라도 만족하지 못하는 경우 프로세스를 종료.
