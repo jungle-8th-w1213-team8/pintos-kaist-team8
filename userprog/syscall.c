@@ -58,6 +58,13 @@ inline void check_address_with_size(const uint64_t *addr, size_t size){
 		exit(-1);
 }
 
+/**
+ * 아래 검증 래퍼 함수들의 본체.
+ * 
+ * @param user_addr 유저 주소
+ * @param size 버퍼의 사이즈
+ * @param writable "버퍼 입장에서" writable 여부
+ */
 static void validate_user_memory(const void *buffer, size_t size, bool writable) {
 	if (buffer == NULL || !is_user_vaddr(buffer) || !is_user_vaddr(buffer + size - 1))
 		exit(-1);
@@ -77,7 +84,22 @@ static void validate_user_memory(const void *buffer, size_t size, bool writable)
 			if (!vm_try_handle_fault(NULL, addr, true, writable, true))
 				exit(-1);
 		} else if (writable) {
-			// 이미 매핑된 페이지의 쓰기 권한 확인
+			/**
+			 * 상세 설명
+			 *
+			 * 이미 매핑되어 있는 페이지의 경우, 쓰기 권한이 실제로 존재하는지 확인해야 한다.
+			 * 이는 단순히 pml4에 해당 가상 주소가 존재하는지만 확인하는 것으로는 충분하지 않다.
+			 * 
+			 * 가령, 코드 영역처럼 읽기만 가능하고 쓰기 권한이 없는 페이지는 
+			 * 유효한 매핑을 가지고 있을 수 있지만, 
+			 * 그 주소에 write하려고 하면 segmentation fault가 발생해야 한다.
+			 * 
+			 * 고로, writable == true인 경우에는 해당 PTE를 직접 추적하여
+			 * pte의 writable bit를 확인한다.
+			 * 
+			 *   - pml4e_walk(): 해당 가상 주소에 대한 최종 PTE를 획득.
+			 *   - is_writable(): 얻은 PTE가 쓰기 가능한지를 확인.
+			 */
 			uint64_t *pte = pml4e_walk(curr->pml4, (uint64_t)addr, false);
 			if (pte == NULL || !is_writable(pte))
 				exit(-1);
