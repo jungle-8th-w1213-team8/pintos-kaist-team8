@@ -239,6 +239,19 @@ vm_stack_growth (void *addr UNUSED) {
 	// 이 함수의 행위 책임 :
 		// 스택 성장 처리 (ok)
 		// 스택 성장 필요 유무를 확인 (?)
+		void *new_page_addr = pg_round_down(addr);
+
+		/* 스택은 익명 페이지로 할당 (VM_ANON) */
+		bool success = vm_alloc_page_with_initializer(
+		   VM_ANON,        // 타입: 익명 페이지
+		   new_page_addr,  // 페이지의 가상주소
+		   true,           // 쓰기 가능
+		   NULL,           // 초기화 함수 (필요 없음)
+		   NULL            // aux 데이터 (필요 없음)
+	   );
+	 
+	   if (!success)
+		 PANIC("vm_stack_growth 실패! 메모리 부족?");
 }
 
 /* Handle the fault on write_protected page */
