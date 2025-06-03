@@ -235,23 +235,23 @@ vm_get_frame (void) {
 
 /* Growing the stack. */
 static void
-vm_stack_growth (void *addr UNUSED) {
+vm_stack_growth (void *addr) {
+	void *pg_addr = pg_round_down(addr);
+    while (vm_alloc_page(VM_ANON, pg_addr, true)) {  // SPT에 페이지 추가
+        struct page *pg = spt_find_page(&thread_current()->spt, pg_addr);
+        vm_claim_page(pg_addr);  // 물리 메모리까지 할당
+        pg_addr += PGSIZE;
+	}
+	
 	// 이 함수의 행위 책임 :
 		// 스택 성장 처리 (ok)
 		// 스택 성장 필요 유무를 확인 (?)
-		void *new_page_addr = pg_round_down(addr);
+	//	void *new_page_addr = pg_round_down(addr);
 
-		/* 스택은 익명 페이지로 할당 (VM_ANON) */
-		bool success = vm_alloc_page_with_initializer(
-		   VM_ANON,        // 타입: 익명 페이지
-		   new_page_addr,  // 페이지의 가상주소
-		   true,           // 쓰기 가능
-		   NULL,           // 초기화 함수 (필요 없음)
-		   NULL            // aux 데이터 (필요 없음)
-	   );
+	//	bool success = vm_alloc_page_with_initializer(VM_ANON, new_page_addr, true, NULL, NULL);
 	 
-	   if (!success)
-		 PANIC("vm_stack_growth 실패! 메모리 부족?");
+	  // if (!success)
+		// PANIC("vm_stack_growth 실패! 메모리 부족?");
 }
 
 /* Handle the fault on write_protected page */
@@ -261,15 +261,16 @@ vm_handle_wp (struct page *page UNUSED) {
 }
 
 /* Return true on success */
-bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED,
-			bool user UNUSED, bool write UNUSED, bool not_present UNUSED
-) {
-	struct supplemental_page_table *spt UNUSED = &thread_current()->spt;
+bool vm_try_handle_fault(struct intr_frame *f, void *addr ,
+			bool user, bool write, bool not_present) {
+
+				
+	struct supplemental_page_table *spt = &thread_current()->spt;
 	struct page *page = NULL;
 
 	// 얼리 리턴
 	// 아! 커널 쓰레드는 page fault 날 일 자체가 없다!
-	if (addr == NULL || is_kernel_vaddr(addr) | !not_present)
+	if (addr == NULL || is_kernel_vaddr(addr))
 		return false;
 	
 	/* TODO: Validate the fault */
@@ -283,13 +284,22 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED,
 		vm_stack_growth(addr);
 
 	page = spt_find_page(spt, addr);
+
 	if (page == NULL) {
 		// 페이지가 SPT에 없음
-		return false;}
-	
-	if (write == 1 && page->writable == 0) // write 불가능한 페이지에 write를 요청함
 		return false;
+	}
 
+		if (!not_present) {
+			if (page && write && !page->writable) {
+				// pt-write-code-2: read-only 페이지에 write 시도
+				return false;  // 프로세스 종료시킴
+			}
+			return false;  // 다른 권한 문제들
+		}
+	 
+
+		
 	return vm_do_claim_page(page);
 }
 
@@ -323,7 +333,6 @@ vm_do_claim_page (struct page *page) {
 	struct frame *frame = vm_get_frame ();
 	if (frame == NULL)
 		return false;
-
 	// mmu.c에는 pml4에 대한 내용을 다루고 있음, pml4에 실제로 올라가는 내용을 다루기
 
 	/* Set links */
@@ -337,7 +346,6 @@ vm_do_claim_page (struct page *page) {
 	void *kpage = frame->kva;
 	bool rw = page->writable;
 
-	// printf("vm_do_claim_page()에서 - %p,%p,%p,%d. \n",pml4, upage, kpage, rw);
 	bool is_page_set = pml4_set_page(pml4, upage, kpage, rw);
 
 	if (!is_page_set) {
@@ -397,6 +405,9 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 		}
 		else if(type == VM_FILE)
 		{
+			//if(!vm_alloc_page(type, upage, writable)) return false;
+			//if(!vm_claim_page(upage)) return false;
+			//printf("DONE \n");
 			//vm_initializer *init = srcPage->file;
 			//void *aux = srcPage->file;
 			// if(!vm_alloc_page_with_initializer(type, upage, writable, init, aux))
