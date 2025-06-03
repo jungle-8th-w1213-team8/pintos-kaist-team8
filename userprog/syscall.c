@@ -293,6 +293,16 @@ void syscall_init (void) {
 void syscall_handler (struct intr_frame *f UNUSED) {
 	int sys_call_number = (int) f->R.rax; // 시스템 콜 번호 받아옴
 
+	// Project 3. Virtual Memory ~
+	/**
+	 * 시스템 콜 내부(커널 진입)에서 사용자 버퍼에 접근하다가, 
+	 * stack 영역에서 page fault가 발생할 수 있다.
+	 * 이때, 커널이 현재의 rsp(유저 스택의 포인터)가 어딘지를 알아야 
+	 * "정말로 stack 확장이 맞는지"를 판단 가능.
+	 */
+	thread_current()->rsp = f->rsp; // Gitbook의 Stack Growth 페이지 참조!!!!
+	// ~ Project 3. Virtual Memory
+
 	/*
 	 x86-64 규약은 함수가 리턴하는 값을 "rax 레지스터"에 담음. 다른 인자들은 rdi, rsi 등 다른 레지스터로 전달.
 	 시스템 콜들 중 값 반환이 필요한 것은, struct intr_frame의 rax 멤버 수정을 통해 구현

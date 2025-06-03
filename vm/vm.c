@@ -45,8 +45,11 @@ static bool vm_do_claim_page (struct page *page);
 static struct frame *vm_evict_frame (void);
 
 /* 유틸, 헬퍼 ~ */
-static bool inline is_target_stack(void* rsp, void* addr){
-	return (USER_STACK - (1 << 20) <= rsp - 8 && rsp - 8 == addr && addr <= USER_STACK) || (USER_STACK - (1 << 20) <= rsp && rsp <= addr && addr <= USER_STACK);
+static inline bool is_target_stack(void* rsp, void* addr) {
+    return addr != NULL
+        && addr >= rsp - STACK_MAX_GAP
+        && addr >= (void *)(USER_STACK - STACK_MAX_SIZE)
+        && addr < (void *)USER_STACK;
 }
 
 static void vm_free_frame(struct frame *frame) {
@@ -252,9 +255,12 @@ vm_handle_wp (struct page *page UNUSED) {
 }
 
 /* Return true on success */
-bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED,
-			bool user UNUSED, bool write UNUSED, bool not_present UNUSED
-) {
+bool vm_try_handle_fault(struct intr_frame *f UNUSED, 
+						void *addr UNUSED,
+						bool user UNUSED, 
+						bool write UNUSED, 
+						bool not_present UNUSED) 
+{
 	struct supplemental_page_table *spt UNUSED = &thread_current()->spt;
 	struct page *page = NULL;
 
@@ -269,14 +275,24 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED,
 	if (!user)			// kernel access인 경우 thread에서 rsp를 가져와야 한다.
 		rsp = thread_current()->rsp;
 
-	// 스택 확장으로 처리할 수 있는 폴트인 경우, vm_stack_growth를 호출
-	if (is_target_stack(rsp,addr))
-		vm_stack_growth(addr);
-
 	page = spt_find_page(spt, addr);
+	// 페이지가 SPT에 없음
 	if (page == NULL) {
-		// 페이지가 SPT에 없음
-		return false;}
+		// 스택 확장으로 처리할 수 있는 폴트인 경우
+		if (is_target_stack(rsp,addr)){
+			// vm_stack_growth()로 스택을 확장
+			vm_stack_growth(addr);
+			// 새 페이지를 얻어 claim
+			page = spt_find_page(spt, addr);
+			if (page != NULL)
+				return vm_do_claim_page(page);
+			else
+        		return false;
+		}else{
+			// 스택 확장으로 안되는 건 어쩔 수 없다.
+			return false;
+		}
+	}
 	
 	if (write == 1 && page->writable == 0) // write 불가능한 페이지에 write를 요청함
 		return false;
@@ -350,7 +366,7 @@ vm_do_claim_page (struct page *page) {
 void
 supplemental_page_table_init (struct supplemental_page_table *spt ) { //SPT 해시 테이블 초기화
 	hash_init(&spt->main_table, page_hash, page_less, NULL);
-	lock_init(&spt->spt_lock);
+	// lock_init(&spt->spt_lock);
 }
 
 /* Copy supplemental page table from src to dst */

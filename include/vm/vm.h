@@ -6,6 +6,11 @@
 #include "filesys/off_t.h"
 #include "threads/synch.h"
 
+/* 전역 매크로 ~ */
+#define STACK_MAX_GAP 32
+#define STACK_MAX_SIZE (1 << 20) // 1 MB
+/* ~ 전역 매크로 */
+
 /* 전역 변수 ~ */
 static struct list g_frame_table;
 static struct lock g_frame_lock;
