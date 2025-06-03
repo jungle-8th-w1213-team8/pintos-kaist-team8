@@ -271,7 +271,7 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED,
 	
 	/* TODO: Validate the fault */
 	// todo: 페이지 폴트가 스택 확장에 대한 유효한 경우인지를 확인해야 합니다.
-	void *rsp = f->rsp; // user access인 경우 rsp는 유저 stack을 가리킨다.
+	void *rsp = (f==NULL) ? (thread_current()->rsp) : (f->rsp); // user access인 경우 rsp는 유저 stack을 가리킨다.
 	if (!user)			// kernel access인 경우 thread에서 rsp를 가져와야 한다.
 		rsp = thread_current()->rsp;
 
