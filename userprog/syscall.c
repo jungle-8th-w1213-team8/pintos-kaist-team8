@@ -36,30 +36,58 @@ void check_address(const uint64_t *addr);
 
 
 /**
+ * 인라인 함수.
  * 주소값이 유저 영역(<0x8004000000)내인지를 검증
  * 
  * @param addr: 주소값.
  */
-void check_address(const uint64_t *addr){
+inline void check_address(const uint64_t *addr){
 	if (addr == NULL || !(is_user_vaddr(addr)) )
 		exit(-1);
 }
 
 /**
- * 해당 주소에 대한 페이지 매핑을 ensure. 없으면 page fault 발생시키기.
+ * Syscall 중 read() 등에 대한 버퍼 검증.
+ * 중요! 유저 주소여야 함!!
  * 
- * @param addr: 주소값.
- * @param writable: 작성 가능 여부.
+ * @param uaddr: 사용자 버퍼 시작 주소
+ * @param size: 버퍼 길이
+ * @param writable: true면, write()처럼 커널이 "user 주소에 write"하는 경우임
  */
-bool ensure_user_page(void *addr, bool writable) {
-    struct thread *curr = thread_current();
+void check_validate_buffer_for_read(void *uaddr, size_t size) {
+	bool writable = true;
+    uint8_t *start = (uint8_t *)uaddr;
+    uint8_t *end = start + size;
 
-    // 이미 매핑되어 있으면 true
-    if (pml4_get_page(curr->pml4, addr) != NULL)
-        return true;
+    for (uint8_t *p = pg_round_down(start); p < end; p += PGSIZE) {
+        struct page *page = spt_find_page(&thread_current()->spt, p);
+        if (page == NULL)
+            exit(-1); // 존재하지 않는 주소 → exit
+        if (writable && !page->writable)
+            exit(-1); // 쓰기 불가한 페이지에 쓰기 요청 → exit
+    }
+}
 
-    // 아니면 page fault로 살릴 수 있나?
-    return vm_try_handle_fault(NULL, addr, true, writable, true);
+/**
+ * Syscall 중 write() 등에 대한 버퍼 검증.
+ * 중요! 유저 주소여야 함!!
+ * 
+ * @param uaddr: 사용자 버퍼 시작 주소
+ * @param size: 버퍼 길이
+ * @param writable: true면, write()처럼 커널이 "user 주소에 write"하는 경우임
+ */
+void check_validate_buffer_for_write(void *uaddr, size_t size) {
+	bool writable = false;
+    uint8_t *start = (uint8_t *)uaddr;
+    uint8_t *end = start + size;
+
+    for (uint8_t *p = pg_round_down(start); p < end; p += PGSIZE) {
+        struct page *page = spt_find_page(&thread_current()->spt, p);
+        if (page == NULL)
+            exit(-1); // 존재하지 않는 주소 → exit
+        if (writable && !page->writable)
+            exit(-1); // 쓰기 불가한 페이지에 쓰기 요청 → exit
+    }
 }
 
 /**
@@ -104,7 +132,8 @@ void exit(int status) {
  * @param size: 복사할 사이즈.
  */
 int write(int fd, const void *buffer, unsigned size){
-	check_address(buffer);
+    check_validate_buffer_for_read(buffer, size);
+
 	int bytes_write = 0;
 	if (fd == STDOUT_FILENO) { // stdout면 직접 작성
 		putbuf(buffer, size);
@@ -241,14 +270,13 @@ int filesize(int fd) {
  * @param size: 복사할 크기.
  */
 int read(int fd, void *buffer, unsigned size){
-	// 1. 주소 범위 검증
-	check_address(buffer);
-    check_address(buffer + size-1); 
+	// 1. 버퍼를 검증
+    check_validate_buffer_for_read(buffer, size);
 
     if (size == 0)
         return 0;
-    if (buffer == NULL || !is_user_vaddr(buffer))
-        exit(-1);
+    // if (buffer == NULL || !is_user_vaddr(buffer))
+    //     exit(-1);
 
     // 2. stdin (fd == 0)일 경우
     if (fd == STDIN_FILENO) {

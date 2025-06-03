@@ -8,7 +8,6 @@
 *.dsk
 *.d
 *.o
-*.s
 
 # MacOS
 .DS_Store

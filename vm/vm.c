@@ -266,7 +266,7 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED,
 
 	// 얼리 리턴
 	// 아! 커널 쓰레드는 page fault 날 일 자체가 없다!
-	if (addr == NULL || is_kernel_vaddr(addr) | !not_present)
+	if (addr == NULL || is_kernel_vaddr(addr) || !not_present)
 		return false;
 	
 	/* TODO: Validate the fault */
@@ -284,17 +284,16 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED,
 			vm_stack_growth(addr);
 			// 새 페이지를 얻어 claim
 			page = spt_find_page(spt, addr);
-			if (page != NULL)
-				return vm_do_claim_page(page);
-			else
+			if (page == NULL)
         		return false;
 		}else{
 			// 스택 확장으로 안되는 건 어쩔 수 없다.
 			return false;
 		}
 	}
-	
-	if (write == 1 && page->writable == 0) // write 불가능한 페이지에 write를 요청함
+
+	// write 불가능한 페이지에 write를 요청함
+    if (write && (page == NULL || !page->writable))  
 		return false;
 
 	return vm_do_claim_page(page);
