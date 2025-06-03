@@ -174,6 +174,8 @@ spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
 static struct frame *
 vm_get_victim (void) {
 	struct frame *victim = NULL;
+
+	// 여기서 정책을 써서 찾아야함. 대부분의 경우 찾겠지만, 못찾으면 NULL 반환 해야함.
 	 /* TODO: The policy for eviction is up to you. */
 
 	return victim;
@@ -183,10 +185,15 @@ vm_get_victim (void) {
  * Return NULL on error.*/
 static struct frame *
 vm_evict_frame (void) {
-	struct frame *victim UNUSED = vm_get_victim ();
+	struct frame *victim = vm_get_victim ();
+	//bool is_swapped_out = swap_out(victim->page);
+	//pml4_clear_page(&thread_current()->pml4, victim->page->va);
+
 	/* TODO: swap out the victim and return the evicted frame. */
 
-	return NULL;
+	// 즉, 여기서 frame을 비우고 해당 프레임을 반환하기
+
+	return victim;
 }
 
 /* palloc()을 호출하고 프레임을 얻습니다. 사용 가능한 페이지가 없으면 페이지를 
@@ -196,14 +203,16 @@ static struct frame *
 vm_get_frame (void) {
 	lock_acquire(&g_frame_lock);
 	void *kva = palloc_get_page(PAL_USER);
+	struct frame *frame = NULL;
 
 	/* 할당 실패 시 eviction policy 집행 */
 	if (kva == NULL) {
-		// TODO: evict 대상 프레임 선택, swap out, 프레임 재활용.
+		frame = vm_evict_frame();
 		lock_release(&g_frame_lock);
-		PANIC("Out of user memory and no eviction implemented yet.");
 	}
-	struct frame *frame = palloc_get_page(PAL_USER);
+
+	if(frame == NULL)
+		frame = palloc_get_page(PAL_USER);
 
 	if(frame == NULL) {
 		palloc_free_page(kva);

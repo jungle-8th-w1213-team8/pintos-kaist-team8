@@ -358,6 +358,8 @@ void syscall_handler (struct intr_frame *f UNUSED) {
 		case SYS_MMAP:
 			printf("Should implement mmap \n");
 			break;
+		case SYS_MUNMAP:
+			printf("Should implement munmap \n");
 		default:
 			printf("FATAL: UNDEFINED SYSTEM CALL!, %d", sys_call_number);
 			exit(-1);
