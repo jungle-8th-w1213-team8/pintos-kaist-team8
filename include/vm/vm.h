@@ -7,7 +7,7 @@
 #include "threads/synch.h"
 
 /* 전역 매크로 ~ */
-#define STACK_MAX_GAP 32
+#define STACK_MAX_GAP 8
 #define STACK_MAX_SIZE (1 << 20) // 1 MB
 /* ~ 전역 매크로 */
 
@@ -136,5 +136,6 @@ bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
 
 bool hash_less_standard(struct hash_elem *, struct hash_elem *);
+static inline bool is_target_stack(void* rsp, void* addr);
 
 #endif  /* VM_VM_H */
