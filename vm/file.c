@@ -100,12 +100,11 @@ file_backed_swap_out (struct page *page) {
 /* Destory the file backed page. PAGE will be freed by the caller. */
 static void
 file_backed_destroy (struct page *page) {
-	struct file_page *file_page UNUSED = &page->file;
+	struct file_page *file_page = &page->file;
     uint64_t *pml4 = thread_current()->pml4;
-
     // dirty면 write-back (frame이 존재할 때만)
     if (page->frame && pml4_is_dirty(pml4, page->va) && file_page->writable) {
-        file_write_at(file_page->file, page->frame->kva, file_page->read_bytes, file_page->ofs);
+        file_write_at(file_page->file, page->va, file_page->read_bytes, file_page->ofs);
         pml4_set_dirty(pml4, page->va, 0);
     }
 
@@ -113,7 +112,10 @@ file_backed_destroy (struct page *page) {
     pml4_clear_page(pml4, page->va);
 
     // TODO: 파일 닫기는 필요 시 별도 refcount 관리
-    // if (file_page->file) { file_close(file_page->file); file_page->file = NULL; }
+    if (file_page->file) {
+        file_close(file_page->file);
+        file_page->file = NULL;
+    }
 }
 
 /* Do the mmap */
@@ -121,10 +123,12 @@ void *
 do_mmap (void *addr, size_t length, int writable,
 		struct file *file, off_t offset) {
 	// 하자있는 요청 내용 차단
-
+    if(pg_round_down(addr) != addr) return NULL;
     if(length == 0) return NULL;
     if(offset % PGSIZE != 0) return NULL;
     if(file == NULL) return NULL;
+    if(is_kernel_vaddr(addr)) return NULL;
+    if(is_kernel_vaddr(length)) return NULL;
 
     struct file *r_file = file_reopen(file);
     //   if(offset + length > file_length(r_file)) return NULL;

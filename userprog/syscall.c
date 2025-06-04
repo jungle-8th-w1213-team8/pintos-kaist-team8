@@ -304,7 +304,7 @@ void *mmap(void *addr, size_t length, int writable, int fd, off_t offset)
 	struct file *file = process_get_file_by_fd(fd);
 	if(file == NULL)
 	{
-		PANIC("SERRARAR");
+		return NULL;
 	}
 	void *result = do_mmap(addr, length, writable, file, offset);
 	return result;

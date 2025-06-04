@@ -20,7 +20,6 @@ vm_init (void) {
 	register_inspect_intr ();
 	/* DO NOT MODIFY UPPER LINES. */
 	/* TODO: Your code goes here. */
-
 	lock_init(&g_frame_lock);
 	list_init(&g_frame_table);
 }
@@ -173,11 +172,31 @@ spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
 static struct frame *
 vm_get_victim (void) {
 	struct frame *victim = NULL;
-
-	// 여기서 정책을 써서 찾아야함. 대부분의 경우 찾겠지만, 못찾으면 NULL 반환 해야함.
-	 /* TODO: The policy for eviction is up to you. */
-
-	return victim;
+ 	struct list_elem *e;
+	lock_acquire(&g_frame_lock);
+ 	for (e = list_begin (&g_frame_table); e != list_end (&g_frame_table); e = list_next (e))
+	{
+   		struct frame *frame = list_entry (e, struct frame, f_elem);
+		if(pml4_is_accessed(&thread_current()->pml4, frame->page->va))
+			pml4_set_accessed(&thread_current()->pml4, frame->page->va, false);
+		else
+		{
+			lock_release(&g_frame_lock);
+			return frame;
+		}
+ 	}
+	
+	for (e = list_begin (&g_frame_table); e != list_end (&g_frame_table); e = list_next (e))
+	{
+		struct frame *frame = list_entry (e, struct frame, f_elem);
+		 if(!pml4_is_accessed(&thread_current()->pml4, frame->page->va))
+		 {
+			lock_release(&g_frame_lock);
+			return frame;
+		 }
+	}
+	lock_release(&g_frame_lock);
+	return NULL;
 }
 
 /* Evict one page and return the corresponding frame.
@@ -187,7 +206,7 @@ vm_evict_frame (void) {
 	struct frame *victim = vm_get_victim ();
 	//bool is_swapped_out = swap_out(victim->page);
 	//pml4_clear_page(&thread_current()->pml4, victim->page->va);
-
+	//list_out 나가 이놈아!!!!!!!!!
 	/* TODO: swap out the victim and return the evicted frame. */
 
 	// 즉, 여기서 frame을 비우고 해당 프레임을 반환하기
