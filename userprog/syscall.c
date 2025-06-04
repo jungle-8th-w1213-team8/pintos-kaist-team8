@@ -13,6 +13,7 @@
 #include "userprog/gdt.h"
 #include "threads/flags.h"
 #include "intrinsic.h"
+#include "vm/file.h"
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -35,7 +36,6 @@ void check_address(const uint64_t *addr);
 
 #define PAL_ZERO 0
 
-
 /**
  * 인라인 함수.
  * 해당 주소값이 유저 영역(<0x8004000000)내인지를 검증
@@ -47,102 +47,42 @@ inline void check_address(const uint64_t *addr){
 		exit(-1);
 }
 
-/**
- * 인라인 함수.
- * 해당 범위가 유저 영역(<0x8004000000)내인지를 검증
- * 
- * @param addr: 주소값.
- */
-inline void check_address_with_size(const uint64_t *addr, size_t size){
-	if (addr == NULL || !is_user_vaddr(addr) || !is_user_vaddr(addr + size - 1))
-		exit(-1);
+void check_validate_buffer_for_read(void *uaddr, size_t size) {
+	bool writable = true;
+    uint8_t *start = (uint8_t *)uaddr;
+    uint8_t *end = start + size;
+
+    for (uint8_t *p = pg_round_down(start); p < end; p += PGSIZE) {
+        struct page *page = spt_find_page(&thread_current()->spt, p);
+        if (page == NULL)
+            exit(-1); // 존재하지 않는 주소 → exit
+        if (writable && !page->writable)
+            exit(-1); // 쓰기 불가한 페이지에 쓰기 요청 → exit
+    }
 }
 
 /**
- * 아래 검증 래퍼 함수들의 본체.
+ * Syscall 중 write() 등에 대한 버퍼 검증.
+ * 중요! 유저 주소여야 함!!
  * 
- * @param user_addr 유저 주소
- * @param size 버퍼의 사이즈
- * @param writable "버퍼 입장에서" writable 여부
+ * @param uaddr: 사용자 버퍼 시작 주소
+ * @param size: 버퍼 길이
+ * @param writable: true면, write()처럼 커널이 "user 주소에 write"하는 경우임
  */
-static void validate_user_memory(const void *buffer, size_t size, bool writable) {
-	if (buffer == NULL || !is_user_vaddr(buffer) || !is_user_vaddr(buffer + size - 1))
-		exit(-1);
+void check_validate_buffer_for_write(void *uaddr, size_t size) {
+	bool writable = false;
+    uint8_t *start = (uint8_t *)uaddr;
+    uint8_t *end = start + size;
 
-	struct thread *curr = thread_current();
-	uint8_t *start = (uint8_t *)pg_round_down(buffer);
-	uint8_t *end = (uint8_t *)pg_round_down(buffer + size - 1);
-
-	for (uint8_t *addr = start; addr <= end; addr += PGSIZE) {
-		if (!is_user_vaddr(addr))
-			exit(-1);
-
-		void *page = pml4_get_page(curr->pml4, addr);
-
-		if (page == NULL) {
-			// 페이지 폴트 처리
-			if (!vm_try_handle_fault(NULL, addr, true, writable, true))
-				exit(-1);
-		} else if (writable) {
-			/**
-			 * 상세 설명
-			 *
-			 * 이미 매핑되어 있는 페이지의 경우, 쓰기 권한이 실제로 존재하는지 확인해야 한다.
-			 * 이는 단순히 pml4에 해당 가상 주소가 존재하는지만 확인하는 것으로는 충분하지 않다.
-			 * 
-			 * 가령, 코드 영역처럼 읽기만 가능하고 쓰기 권한이 없는 페이지는 
-			 * 유효한 매핑을 가지고 있을 수 있지만, 
-			 * 그 주소에 write하려고 하면 segmentation fault가 발생해야 한다.
-			 * 
-			 * 고로, writable == true인 경우에는 해당 PTE를 직접 추적하여
-			 * pte의 writable bit를 확인한다.
-			 * 
-			 *   - pml4e_walk(): 해당 가상 주소에 대한 최종 PTE를 획득.
-			 *   - is_writable(): 얻은 PTE가 쓰기 가능한지를 확인.
-			 */
-			uint64_t *pte = pml4e_walk(curr->pml4, (uint64_t)addr, false);
-			if (pte == NULL || !is_writable(pte))
-				exit(-1);
-		}
-	}
+    for (uint8_t *p = pg_round_down(start); p < end; p += PGSIZE) {
+        struct page *page = spt_find_page(&thread_current()->spt, p);
+        if (page == NULL)
+            exit(-1); // 존재하지 않는 주소 → exit
+        if (writable && !page->writable)
+            exit(-1); // 쓰기 불가한 페이지에 쓰기 요청 → exit
+    }
 }
 
-/**
- * 주의! 시스템 콜 중 write() 등에 사용!
- * 유저가 전달한 주소가 읽기 가능한 메모리 영역인지 확인.
- * 주어진 주소 범위내 각 페이지가 유저 공간에 속하며 페이지 폴트를 통해 접근이 가능한지 확인.
- * 접근 불가능한 경우 프로세스를 종료.
- * 
- * @param user_addr 유저 주소
- * @param size 버퍼의 사이즈
- */
-void validate_read_buffer(const void *user_addr, size_t size) {
-	validate_user_memory(user_addr, size, false);
-}
-
-/**
- * 주의! 시스템 콜 중 read() 등에 사용!
- * 유저가 전달한 주소가 쓰기 가능한 메모리 영역인지 확인.
- * 주어진 주소 범위내 각 페이지가 유저 공간에 속하고 페이지 폴트를 통해 접근 가능하며 쓰기도 가능한지 확인.
- * 하나라도 만족하지 못하는 경우 프로세스를 종료.
- * 
- * @param user_addr 유저 주소
- * @param size 버퍼의 사이즈
- */
-void validate_write_buffer(const void *user_addr, size_t size) {
-	validate_user_memory(user_addr, size, true);
-}
-
-/**
- * validate_buffer의 설명과 동일.
- * 
- * @param user_addr 유저 주소
- * @param size 버퍼의 사이즈
- */
-void validate_buffer(const void *user_addr, size_t size) {
-	// 기존 로직에 따라 읽기용으로 간주
-	validate_user_memory(user_addr, size, false);
-}
 
 /**
  * halt - 머신을 halt함.
@@ -186,8 +126,8 @@ void exit(int status) {
  * @param size: 복사할 사이즈.
  */
 int write(int fd, const void *buffer, unsigned size){
-    validate_read_buffer(buffer, size); // 이거 validate_read_buffer라고 쓴 거 맞습니다!!!!!
-
+	check_validate_buffer_for_write(buffer, size);
+	check_address(buffer);
 	int bytes_write = 0;
 	if (fd == STDOUT_FILENO) { // stdout면 직접 작성
 		putbuf(buffer, size);
@@ -324,8 +264,11 @@ int filesize(int fd) {
  * @param size: 복사할 크기.
  */
 int read(int fd, void *buffer, unsigned size){
-	// 1. 버퍼를 검증
-    validate_write_buffer(buffer, size); // 이거 validate_write_buffer라고 쓴 거 맞습니다!!!!!
+	// 1. 주소 범위 검증
+
+	check_validate_buffer_for_read(buffer, size);
+	check_address(buffer);
+    check_address(buffer + size-1); 
 
     if (size == 0)
         return 0;
@@ -355,6 +298,23 @@ int read(int fd, void *buffer, unsigned size){
     ret = file_read(file, buffer, size);
     lock_release(&filesys_lock);
     return ret;
+}
+
+
+void *mmap(void *addr, size_t length, int writable, int fd, off_t offset)
+{
+	struct file *file = process_get_file_by_fd(fd);
+	if(file == NULL)
+	{
+		PANIC("SERRARAR");
+	}
+	void *result = do_mmap(addr, length, writable, file, offset);
+	return result;
+}
+
+void munmap(void *addr)
+{
+	do_munmap(addr);
 }
 
 void syscall_init (void) {
@@ -448,7 +408,10 @@ void syscall_handler (struct intr_frame *f UNUSED) {
 			close(f->R.rdi);
 			break;
 		case SYS_MMAP:
-			printf("Should implement mmap \n");
+			f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+			break;
+		case SYS_MUNMAP:
+			munmap(f->R.rdi);
 			break;
 		default:
 			printf("FATAL: UNDEFINED SYSTEM CALL!, %d", sys_call_number);
