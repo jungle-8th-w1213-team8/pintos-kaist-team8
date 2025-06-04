@@ -23,7 +23,6 @@ bool
 file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
     ASSERT(page != NULL);
     ASSERT(type == VM_FILE);
-
     struct file_lazy_aux *aux = (struct file_lazy_aux *) page->uninit.aux;
 
     // 파일 seek은 thread-safe하지 않으므로 file_read_at을 사용!
@@ -34,17 +33,31 @@ file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
     size_t fl_zero_bytes = aux->zero_bytes;
 	bool fl_writable = aux->writable;
 
-    // 파일에서 read_bytes만큼 읽기
-    if (file_read_at(fl_file, kva, fl_read_bytes, fl_offset) != (int) fl_read_bytes)
-        return false;
+    size_t file_len = file_length(fl_file);
 
+    // 실제로 읽을 수 있는 양 계산
+    size_t available = 0;
+    if (fl_offset < file_len) {
+        available = file_len - fl_offset;
+        if (available > fl_read_bytes)
+            available = fl_read_bytes;
+    }
+    // 파일에서 read_bytes만큼 읽기
+    off_t actually = file_read_at(fl_file, kva, fl_read_bytes, fl_offset);
+    if (actually != available)
+    {
+        return false;
+    }
     // 나머지 영역을 zero-fill
+
     memset(kva + fl_read_bytes, 0, fl_zero_bytes);
 
 	/* Set up the handler */
+
 	page->operations = &file_ops;
 
     // file_page 구조로 필요한 정보를 복사
+
     struct file_page *file_page = &page->file;
     file_page->file = fl_file;
     file_page->ofs = fl_offset;
@@ -58,9 +71,8 @@ file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
 /* Swap in the page by read contents from the file. */
 static bool
 file_backed_swap_in (struct page *page, void *kva) {
-    // page->file에 실제 정보가 다 채워져 있다면 아래처럼 직접 
-	struct file_page *file_page UNUSED = &page->file;
-    do_mmap(NULL, file_page->read_bytes, file_page->writable, file_page->file, file_page->ofs);
+	struct file_page *file_page = &page->file;
+
 	return lazy_load_segment(page, file_page);
 }
 
@@ -109,49 +121,95 @@ void *
 do_mmap (void *addr, size_t length, int writable,
 		struct file *file, off_t offset) {
 	// 하자있는 요청 내용 차단
+
     if(length == 0) return NULL;
     if(offset % PGSIZE != 0) return NULL;
     if(file == NULL) return NULL;
 
-    
+    struct file *r_file = file_reopen(file);
+    //   if(offset + length > file_length(r_file)) return NULL;
 
-    void *start_addr = pg_round_down(addr);
-    size_t page_cnt = (length + PGSIZE - 1) / PGSIZE;
-
-    if(addr == NULL) addr = palloc_get_multiple(PAL_USER | PAL_ZERO, page_cnt);
-    // 파일을 받냐 디스크립터를 받냐가 있는데 일단은 file을 받는다고 전제하자
-
-    void *current_addr = start_addr;
-    for (size_t i = 0; i < page_cnt; i++) {
-    // aux 구조체 생성
-    struct file_lazy_aux *aux = malloc(sizeof(struct file_lazy_aux));
-    aux->file = file;
-    aux->ofs = offset + (i * PGSIZE);
-    aux->read_bytes = length - (i * PGSIZE) < PGSIZE ? length - (i * PGSIZE) : PGSIZE;
-    aux->zero_bytes = PGSIZE - aux->read_bytes;
-    aux->writable = writable;
-    
-    // VM_FILE 페이지 생성
-    if (!vm_alloc_page_with_initializer(VM_FILE, current_addr, writable,
-                                       file_backed_initializer, aux)) {
-        // 실패 시 이미 할당된 페이지들 정리
+    if(addr == NULL) // called by NOT user
+    { // 
+        // PintOS 기본 정책에 따라 실패 처리해도 되는데 아무 처리가 없다고 뭐라하네 뭐임
         return NULL;
     }
-    current_addr += PGSIZE;
+    else // called by USER
+    {
+
+        void *start_addr = pg_round_down(addr);
+        size_t page_cnt = (length + PGSIZE - 1) / PGSIZE;
+    
+        void *current_addr = start_addr;
+        for (size_t i = 0; i < page_cnt; i++)
+        {
+            // aux 구조체 생성
+            struct file_lazy_aux *aux = malloc(sizeof(struct file_lazy_aux));
+            aux->file = r_file;
+            aux->ofs = offset + (i * PGSIZE);
+            aux->read_bytes = length - (i * PGSIZE) < PGSIZE ? length - (i * PGSIZE) : PGSIZE;
+            aux->zero_bytes = PGSIZE - aux->read_bytes;
+            aux->writable = writable;
+        // VM_FILE 페이지 생성
+            if (!vm_alloc_page_with_initializer(VM_FILE, current_addr, writable,
+                                            lazy_load_segment, aux)) {
+                file_close(r_file);
+                // 만약 페이지를 4개 할당했는데 3번쨰에서 실패하면 1, 2번쨰를 다 정리해야한다.
+                // 그럼 뭐 어떻게 해야해?.. current_addr 단위로 더하고있는데, 해당 내용으로 다시 찾아다가 지워야한다는거잖아요
+                // https://www.perplexity.ai/search/about-pintos-4ADhN6AcRuWMJB2AGVzxSg#101
+
+                return NULL;
+            }
+            current_addr += PGSIZE;
+        }
+    }
+    return addr;
 }
+
+void munmap_helper(struct supplemental_page_table *spt, struct page *page)
+{
+	struct file_page *file_page = &page->file;
+    if(pml4_is_dirty(thread_current()->pml4, page->va))
+    {
+        file_write_at(file_page->file, page->frame->kva, file_page->read_bytes, file_page->ofs);
+		pml4_set_dirty(thread_current()->pml4, page->va, 0);
+    }
+
+    if(page->frame)
+    {
+        page->frame->page = NULL;
+        page->frame = NULL;
+    }
+
+    // maybe insert frame to frame table
+	pml4_clear_page(thread_current()->pml4, page->va);
+    spt_remove_page(spt, page);
 }
 
 /* Do the munmap */
 void
 do_munmap (void *addr) {
+ //   if(pg_round_down(addr) % PGSIZE != 0) return NULL;
     struct supplemental_page_table *spt = &thread_current()->spt;
-    
-    // 가상 주소로 페이지 찾기
-    struct page *page = spt_find_page(spt, addr);
-    
-    // 페이지를 찾지 못했거나, 페이지가 munmap을 해야 할 것이 아닌 경우
+    void *cur_addr = addr;
+
+    struct page *page = spt_find_page(spt, cur_addr);
     if (page == NULL || page->operations->type != VM_FILE)
-        return false;
-    
-    return file_write_back(page);
+        return;
+    struct file *target_file = page->file.file;
+    munmap_helper(spt, page);
+    // page remove from spt, maybe swap out?
+
+    bool is_same_file = true;
+    while(is_same_file)
+    {
+        cur_addr += PGSIZE;
+        struct page *search_page = spt_find_page(spt, cur_addr);
+        if(search_page == NULL || search_page->operations->type != VM_FILE || search_page->file.file != target_file)
+        {
+            is_same_file = false;
+            break;
+        }
+        munmap_helper(spt, search_page);
+    }
 }

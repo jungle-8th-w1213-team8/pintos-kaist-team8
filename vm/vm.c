@@ -164,7 +164,7 @@ spt_insert_page (struct supplemental_page_table *spt ,struct page *page) {
 
 void
 spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
-	// spt에서 page->va
+	hash_delete(&spt->main_table, &page->page_hashelem);
 	vm_dealloc_page (page);
 	return true;
 }
@@ -267,8 +267,8 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr, bool user, bool write
 
 	// 스택 확장으로 처리할 수 있는 폴트인 경우, vm_stack_growth를 호출
 	if (is_target_stack(rsp,addr)) vm_stack_growth(addr);
-	page = spt_find_page(spt, addr);
 
+	page = spt_find_page(spt, addr);
 	if (page == NULL) return false;
 
 		if (!not_present) {
@@ -323,9 +323,9 @@ vm_do_claim_page (struct page *page) {
 		return false;
 	}
 
-	// printf("vm_do_claim_page()의 pml4_set_page 결과 - %d\n",is_page_set);
+	//printf("vm_do_claim_page()의 pml4_set_page 결과 - %d\n",is_page_set);
 	bool is_swapped_in = swap_in(page, frame->kva);
-	// printf("vm_do_claim_page()의 swap_in 결과 - %d\n",is_swapped_in);
+	//printf("vm_do_claim_page()의 swap_in 결과 - %d\n",is_swapped_in);
 
 	return is_swapped_in;
 }

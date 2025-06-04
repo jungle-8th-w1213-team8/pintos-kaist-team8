@@ -776,17 +776,36 @@ bool lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
 	ASSERT(page != NULL);
-	struct file_lazy_aux *fla = (struct file_lazy_aux *) aux;
+	struct file_page *fla = (struct file_page *) aux;
 	ASSERT(fla != NULL);
 
 	// page->frame는 이미 할당되어 있음
 	uint8_t *kva = page->frame->kva;
 	page->writable = fla->writable; // 쓰기 보호
     // file_read_at을 사용!
-    if (file_read_at(fla->file, kva, fla->read_bytes, fla->ofs) != (int) fla->read_bytes) {
+
+    // 파일 seek은 thread-safe하지 않으므로 file_read_at을 사용!
+	// TODO: 오작동 시 걍 seek 쓸 것.
+    struct file *fl_file = fla->file;
+    off_t fl_offset = fla->ofs;
+    size_t fl_read_bytes = fla->read_bytes;
+    size_t fl_zero_bytes = fla->zero_bytes;
+	bool fl_writable = fla->writable;
+    size_t file_len = file_length(fl_file);
+
+    // 실제로 읽을 수 있는 양 계산
+    size_t available = 0;
+    if (fl_offset < file_len) {
+        available = file_len - fl_offset;
+        if (available > fl_read_bytes)
+            available = fl_read_bytes;
+    }
+    // 파일에서 read_bytes만큼 읽기
+    off_t actually = file_read_at(fl_file, kva, fl_read_bytes, fl_offset);
+    if (actually != available)
+    {
         return false;
     }
-
 	// 나머지는 zero fill
 	memset(kva + fla->read_bytes, 0, fla->zero_bytes);
 

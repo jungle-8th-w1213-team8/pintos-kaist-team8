@@ -301,13 +301,13 @@ int read(int fd, void *buffer, unsigned size){
 
 void *mmap(void *addr, size_t length, int writable, int fd, off_t offset)
 {
-	if(fd < 2)
-	{
-		printf("serious error\n");
-		exit(-1);
-	}
 	struct file *file = process_get_file_by_fd(fd);
-	return do_mmap(addr, length, writable, file, offset);
+	if(file == NULL)
+	{
+		PANIC("SERRARAR");
+	}
+	void *result = do_mmap(addr, length, writable, file, offset);
+	return result;
 }
 
 void munmap(void *addr)
@@ -397,10 +397,10 @@ void syscall_handler (struct intr_frame *f UNUSED) {
 			break;
 		case SYS_MMAP:
 			f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
-			// void *mmap(void *addr, size_t length, int writable, int fd, off_t offset);
 			break;
 		case SYS_MUNMAP:
 			munmap(f->R.rdi);
+			break;
 		default:
 			printf("FATAL: UNDEFINED SYSTEM CALL!, %d", sys_call_number);
 			exit(-1);
