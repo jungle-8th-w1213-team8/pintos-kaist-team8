@@ -49,7 +49,7 @@ static inline bool is_target_stack(void* rsp, void* addr) {
     return addr != NULL
         && addr >= rsp - STACK_MAX_GAP
         && addr >= (void *)(USER_STACK - STACK_MAX_SIZE)
-        && addr < (void *)USER_STACK; 
+        && addr < (void *)USER_STACK;
 }
 
 static void vm_free_frame(struct frame *frame) {
@@ -249,10 +249,49 @@ vm_stack_growth (void *addr UNUSED) {
 }
 
 /* Handle the fault on write_protected page */
+/* Handle the fault on write_protected page (Copy-On-Write) */
 static bool
-vm_handle_wp (struct page *page UNUSED) {
-	// 쓰기 제한이 걸린 페이지를 다뤄야해요
+vm_handle_wp(struct page *page) {
+    ASSERT(page != NULL);
+    ASSERT(page->frame != NULL);
+
+    // 1. 새 프레임 할당
+    void *new_kva = palloc_get_page(PAL_USER);
+    if (new_kva == NULL)
+        return false;
+
+    // 2. 기존 프레임 데이터 복사
+    memcpy(new_kva, page->frame->kva, PGSIZE);
+
+    // 3. 새로운 frame 구조체 생성
+    struct frame *new_frame = malloc(sizeof(struct frame));
+    if (new_frame == NULL) {
+        palloc_free_page(new_kva);
+        return false;
+    }
+    new_frame->kva = new_kva;
+    new_frame->page = page;
+
+    // 4. pml4를 새로운 프레임으로 갱신 (writable=true)
+    if (!pml4_set_page(thread_current()->pml4, page->va, new_kva, true)) {
+        palloc_free_page(new_kva);
+        free(new_frame);
+        return false;
+    }
+
+    // 5. 이전 frame 정리
+    struct frame *old_frame = page->frame;
+    page->frame = new_frame;
+
+    lock_acquire(&g_frame_lock);
+    list_push_back(&g_frame_table, &new_frame->f_elem);
+    lock_release(&g_frame_lock);
+
+    vm_free_frame(old_frame);
+
+    return true;
 }
+
 
 /* Return true on success */
 bool vm_try_handle_fault(struct intr_frame *f UNUSED, 
@@ -266,12 +305,12 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED,
 
 	// 얼리 리턴
 	// 아! 커널 쓰레드는 page fault 날 일 자체가 없다!
-	if (addr == NULL || is_kernel_vaddr(addr) | !not_present)
+	if (addr == NULL || is_kernel_vaddr(addr) || !not_present)
 		return false;
 	
 	/* TODO: Validate the fault */
 	// todo: 페이지 폴트가 스택 확장에 대한 유효한 경우인지를 확인해야 합니다.
-	void *rsp = f->rsp; // user access인 경우 rsp는 유저 stack을 가리킨다.
+	void *rsp = (f==NULL) ? (thread_current()->rsp) : (f->rsp); // user access인 경우 rsp는 유저 stack을 가리킨다.
 	if (!user)			// kernel access인 경우 thread에서 rsp를 가져와야 한다.
 		rsp = thread_current()->rsp;
 
@@ -284,18 +323,22 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED,
 			vm_stack_growth(addr);
 			// 새 페이지를 얻어 claim
 			page = spt_find_page(spt, addr);
-			if (page != NULL)
-				return vm_do_claim_page(page);
-			else
+			if (page == NULL)
         		return false;
 		}else{
 			// 스택 확장으로 안되는 건 어쩔 수 없다.
 			return false;
 		}
 	}
-	
-	if (write == 1 && page->writable == 0) // write 불가능한 페이지에 write를 요청함
-		return false;
+
+	// // write 불가능한 페이지에 write를 요청함
+    // if (write && (page == NULL || !page->writable))  
+	// 	return false;
+
+	    // 🔥 COW 처리
+		if (write && !page->writable) {
+			return vm_handle_wp(page);
+		}
 
 	return vm_do_claim_page(page);
 }

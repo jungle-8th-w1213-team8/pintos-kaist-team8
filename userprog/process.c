@@ -779,8 +779,8 @@ bool lazy_load_segment (struct page *page, void *aux) {
 	struct file_lazy_aux *fla = (struct file_lazy_aux *) aux;
 	ASSERT(fla != NULL);
 
-	// page->frame는 이미 할당되어 있음
-	uint8_t *kva = page->frame->kva;
+	uint8_t *kva = page->frame->kva; // page->frame는 이미 할당되어 있음
+    page->writable = fla->writable; // 쓰기 보호
 
 	// // 파일에서 read_bytes 만큼 읽어오기
 	// if (file_seek(fla->file, fla->ofs), 
