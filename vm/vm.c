@@ -204,13 +204,17 @@ vm_get_victim (void) {
 static struct frame *
 vm_evict_frame (void) {
 	struct frame *victim = vm_get_victim ();
-	//bool is_swapped_out = swap_out(victim->page);
-	//pml4_clear_page(&thread_current()->pml4, victim->page->va);
-	//list_out 나가 이놈아!!!!!!!!!
+	if(victim == NULL) return NULL;
+
+	if(!swap_out(victim->page)) return NULL;
+	pml4_clear_page(&thread_current()->pml4, victim->page->va);
+
+
 	/* TODO: swap out the victim and return the evicted frame. */
+	victim->page->frame = NULL;
+	victim->page = NULL;
 
-	// 즉, 여기서 frame을 비우고 해당 프레임을 반환하기
-
+	memset(victim->kva, 0, PGSIZE);
 	return victim;
 }
 
@@ -219,34 +223,35 @@ vm_evict_frame (void) {
  * 메모리가 가득 차면, 이 함수는 프레임을 축출하여 사용 가능한 메모리 공간을 확보합니다.*/
 static struct frame *
 vm_get_frame (void) {
-	lock_acquire(&g_frame_lock);
 	void *kva = palloc_get_page(PAL_USER);
 	struct frame *frame = NULL;
 
 	/* 할당 실패 시 eviction policy 집행 */
 	if (kva == NULL) {
 		frame = vm_evict_frame();
-		lock_release(&g_frame_lock);
 	}
 
 	if(frame == NULL)
-		frame = palloc_get_page(PAL_USER);
-
-	if(frame == NULL) {
-		palloc_free_page(kva);
-		lock_release(&g_frame_lock);
-		PANIC("struct frame 할당 실패!");
+	{
+		frame = malloc(sizeof(struct frame));
+		if(frame == NULL)
+		{
+			if(kva) palloc_free_page(kva);
+			PANIC("struct frame 할당 실패!");
+		}
+	
 	}
 
 	frame->kva = kva;
 	frame->page = NULL;
 
 	// 전역 frame table에 등록
+	lock_acquire(&g_frame_lock);
 	list_push_back(&g_frame_table, &frame->f_elem);
+	lock_release(&g_frame_lock);
 
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
-	lock_release(&g_frame_lock);
 
 	return frame;
 }
@@ -294,7 +299,16 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr, bool user, bool write
 			if (page && write && !page->writable) return false;  // 프로세스 종료시킴
 			return false;  // 다른 권한 문제들
 		}
-	return vm_do_claim_page(page);
+
+	    if (vm_do_claim_page(page)) {
+			// 핵심: write fault이고 writable 페이지라면 dirty 설정
+			if (write && page->writable) {
+				pml4_set_dirty(thread_current()->pml4, page->va, true);
+			}
+			return true;
+		}
+		
+	return false;
 }
 
 
@@ -314,7 +328,6 @@ vm_claim_page (void *va) {
 
 	page = spt_find_page(spt, va);
 	if (page == NULL) return false;
-
 	return vm_do_claim_page(page);
 }
 

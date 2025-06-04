@@ -13,6 +13,7 @@ struct file_page {
 	size_t read_bytes;
 	size_t zero_bytes;
     bool writable; // for permission bit in page table
+	int *ref_count;
 };
 
 void vm_file_init (void);

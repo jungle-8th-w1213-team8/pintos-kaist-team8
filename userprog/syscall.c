@@ -379,7 +379,7 @@ void syscall_handler (struct intr_frame *f UNUSED) {
 			f->R.rax = read(f->R.rdi, f->R.rsi, f->R.rdx);
 			break;
 		case SYS_WRITE:
-			// printf("SYS_WRITE [%d]", sys_call_number);
+			//printf("SYS_WRITE [%d]", sys_call_number);
 			f->R.rax = write(f->R.rdi, f->R.rsi, f->R.rdx);
 			break;
 		case SYS_SEEK:

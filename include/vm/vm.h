@@ -17,6 +17,7 @@ struct file_lazy_aux {
 	size_t read_bytes;
 	size_t zero_bytes;
     bool writable; // for permission bit in page table
+	int *ref_count;
 };
 
 enum vm_type {

@@ -112,10 +112,14 @@ file_backed_destroy (struct page *page) {
     pml4_clear_page(pml4, page->va);
 
     // TODO: 파일 닫기는 필요 시 별도 refcount 관리
-    if (file_page->file) {
-        file_close(file_page->file);
-        file_page->file = NULL;
-    }
+    // lazy-file 통과 여부, 여기서 주석 처리하면 통과함
+     (file_page->ref_count)--;
+     // 해당 파일을 참조 하고 있는 ref_count를 세어봅니다. 0이 되는경우 해당 파일의 원본이라고 전제하고 그제야 file_close가 진행됩니다.
+if (file_page->ref_count == 0) {
+    file_close(file_page->file);
+    free(file_page->ref_count);
+    file_page->file = NULL;
+}
 }
 
 /* Do the mmap */
@@ -134,8 +138,7 @@ do_mmap (void *addr, size_t length, int writable,
     //   if(offset + length > file_length(r_file)) return NULL;
 
     if(addr == NULL) // called by NOT user
-    { // 
-        // PintOS 기본 정책에 따라 실패 처리해도 되는데 아무 처리가 없다고 뭐라하네 뭐임
+    {
         return NULL;
     }
     else // called by USER
@@ -143,6 +146,8 @@ do_mmap (void *addr, size_t length, int writable,
 
         void *start_addr = pg_round_down(addr);
         size_t page_cnt = (length + PGSIZE - 1) / PGSIZE;
+        int *ref_count = malloc(sizeof(int));
+        *ref_count = page_cnt;
     
         void *current_addr = start_addr;
         for (size_t i = 0; i < page_cnt; i++)
@@ -154,9 +159,15 @@ do_mmap (void *addr, size_t length, int writable,
             aux->read_bytes = length - (i * PGSIZE) < PGSIZE ? length - (i * PGSIZE) : PGSIZE;
             aux->zero_bytes = PGSIZE - aux->read_bytes;
             aux->writable = writable;
+            aux->ref_count = ref_count;
         // VM_FILE 페이지 생성
-            if (!vm_alloc_page_with_initializer(VM_FILE, current_addr, writable,
-                                            lazy_load_segment, aux)) {
+            if (!vm_alloc_page_with_initializer(VM_FILE, current_addr, writable, lazy_load_segment, aux)) {
+                    current_addr = start_addr;
+                    for (size_t j = 0; j < i; j++)
+                    {
+                        vm_dealloc_page(pml4_get_page(thread_current()->pml4, current_addr));
+                        current_addr += PGSIZE;
+                    }     
                 file_close(r_file);
                 // 만약 페이지를 4개 할당했는데 3번쨰에서 실패하면 1, 2번쨰를 다 정리해야한다.
                 // 그럼 뭐 어떻게 해야해?.. current_addr 단위로 더하고있는데, 해당 내용으로 다시 찾아다가 지워야한다는거잖아요
