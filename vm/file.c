@@ -113,13 +113,13 @@ file_backed_destroy (struct page *page) {
 
     // TODO: 파일 닫기는 필요 시 별도 refcount 관리
     // lazy-file 통과 여부, 여기서 주석 처리하면 통과함
-     (file_page->ref_count)--;
-     // 해당 파일을 참조 하고 있는 ref_count를 세어봅니다. 0이 되는경우 해당 파일의 원본이라고 전제하고 그제야 file_close가 진행됩니다.
-if (file_page->ref_count == 0) {
-    file_close(file_page->file);
-    free(file_page->ref_count);
-    file_page->file = NULL;
-}
+//      (file_page->ref_count)--;
+//      // 해당 파일을 참조 하고 있는 ref_count를 세어봅니다. 0이 되는경우 해당 파일의 원본이라고 전제하고 그제야 file_close가 진행됩니다.
+// if (file_page->ref_count == 0) {
+//     file_close(file_page->file);
+//     free(file_page->ref_count);
+//     file_page->file = NULL;
+// }
 }
 
 /* Do the mmap */

@@ -213,6 +213,7 @@ vm_evict_frame (void) {
 	/* TODO: swap out the victim and return the evicted frame. */
 	victim->page->frame = NULL;
 	victim->page = NULL;
+	// 이거 swap out이랑 루틴이 중복되는데 흠
 
 	memset(victim->kva, 0, PGSIZE);
 	return victim;
@@ -391,32 +392,14 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 		}
 		else if(type == VM_ANON)
 		{
-			// 실제 작동 여기만 함 . 딴데 보지 마세요
+			// VM_ANON 분기점 말고 VM_FILE까지 허용하면 mmap_inherit 작동 안함
 			if(!vm_alloc_page(type, upage, writable)) return false;
 			if(!vm_claim_page(upage)) return false;
 			struct page *newPage = spt_find_page(dst, upage);
 			if(srcPage->frame != NULL)
 				memcpy(newPage->frame->kva, srcPage->frame->kva, PGSIZE);
-			
 		}
-		else if(type == VM_FILE)
-		{
-			//if(!vm_alloc_page(type, upage, writable)) return false;
-			//if(!vm_claim_page(upage)) return false;
-			//printf("DONE \n");
-			//vm_initializer *init = srcPage->file;
-			//void *aux = srcPage->file;
-			// if(!vm_alloc_page_with_initializer(type, upage, writable, init, aux))
-			// {
-			// 	return false;
-			// }
-			// else
-			// {
-			// 	if(!vm_claim_page(upage)) return false;
-			// 	struct page *newPage = spt_find_page(dst, upage);
-			// 	memcpy(newPage->frame->kva, srcPage->frame->kva, PGSIZE);
-			// }
-		}
+		
 	}
 	return true;
 }
