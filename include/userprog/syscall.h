@@ -15,5 +15,8 @@ void close(int fd);
 int filesize(int fd);
 int read(int fd, void *buffer, unsigned size);
 
+void *mmap(void *addr, size_t length, int writable, int fd, off_t offset);
+void munmap(void *addr);
+
 
 #endif /* userprog/syscall.h */

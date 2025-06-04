@@ -3,6 +3,7 @@
 #include "vm/vm.h"
 #include "threads/vaddr.h"
 #include "userprog/process.h"
+#include "threads/mmu.h"
 
 /* DO NOT MODIFY this struct */
 static const struct page_operations file_ops = {
@@ -59,6 +60,7 @@ static bool
 file_backed_swap_in (struct page *page, void *kva) {
     // page->file에 실제 정보가 다 채워져 있다면 아래처럼 직접 
 	struct file_page *file_page UNUSED = &page->file;
+    do_mmap(NULL, file_page->read_bytes, file_page->writable, file_page->file, file_page->ofs);
 	return lazy_load_segment(page, file_page);
 }
 
@@ -106,10 +108,50 @@ file_backed_destroy (struct page *page) {
 void *
 do_mmap (void *addr, size_t length, int writable,
 		struct file *file, off_t offset) {
-	// TODO : 적절하지 않은 내용에 대해 차단 후 본 루틴을 실행 할 것 !!
+	// 하자있는 요청 내용 차단
+    if(length == 0) return NULL;
+    if(offset % PGSIZE != 0) return NULL;
+    if(file == NULL) return NULL;
+
+    
+
+    void *start_addr = pg_round_down(addr);
+    size_t page_cnt = (length + PGSIZE - 1) / PGSIZE;
+
+    if(addr == NULL) addr = palloc_get_multiple(PAL_USER | PAL_ZERO, page_cnt);
+    // 파일을 받냐 디스크립터를 받냐가 있는데 일단은 file을 받는다고 전제하자
+
+    void *current_addr = start_addr;
+    for (size_t i = 0; i < page_cnt; i++) {
+    // aux 구조체 생성
+    struct file_lazy_aux *aux = malloc(sizeof(struct file_lazy_aux));
+    aux->file = file;
+    aux->ofs = offset + (i * PGSIZE);
+    aux->read_bytes = length - (i * PGSIZE) < PGSIZE ? length - (i * PGSIZE) : PGSIZE;
+    aux->zero_bytes = PGSIZE - aux->read_bytes;
+    aux->writable = writable;
+    
+    // VM_FILE 페이지 생성
+    if (!vm_alloc_page_with_initializer(VM_FILE, current_addr, writable,
+                                       file_backed_initializer, aux)) {
+        // 실패 시 이미 할당된 페이지들 정리
+        return NULL;
+    }
+    current_addr += PGSIZE;
+}
 }
 
 /* Do the munmap */
 void
 do_munmap (void *addr) {
+    struct supplemental_page_table *spt = &thread_current()->spt;
+    
+    // 가상 주소로 페이지 찾기
+    struct page *page = spt_find_page(spt, addr);
+    
+    // 페이지를 찾지 못했거나, 페이지가 munmap을 해야 할 것이 아닌 경우
+    if (page == NULL || page->operations->type != VM_FILE)
+        return false;
+    
+    return file_write_back(page);
 }

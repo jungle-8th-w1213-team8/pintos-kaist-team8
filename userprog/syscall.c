@@ -12,6 +12,7 @@
 #include "userprog/gdt.h"
 #include "threads/flags.h"
 #include "intrinsic.h"
+#include "vm/file.h"
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -297,6 +298,23 @@ int read(int fd, void *buffer, unsigned size){
     return ret;
 }
 
+
+void *mmap(void *addr, size_t length, int writable, int fd, off_t offset)
+{
+	if(fd < 2)
+	{
+		printf("serious error\n");
+		exit(-1);
+	}
+	struct file *file = process_get_file_by_fd(fd);
+	return do_mmap(addr, length, writable, file, offset);
+}
+
+void munmap(void *addr)
+{
+	do_munmap(addr);
+}
+
 void syscall_init (void) {
 	write_msr(MSR_STAR, ((uint64_t)SEL_UCSEG - 0x10) << 48  |
 			((uint64_t)SEL_KCSEG) << 32);
@@ -378,10 +396,11 @@ void syscall_handler (struct intr_frame *f UNUSED) {
 			close(f->R.rdi);
 			break;
 		case SYS_MMAP:
-			printf("Should implement mmap \n");
+			f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+			// void *mmap(void *addr, size_t length, int writable, int fd, off_t offset);
 			break;
 		case SYS_MUNMAP:
-			printf("Should implement munmap \n");
+			munmap(f->R.rdi);
 		default:
 			printf("FATAL: UNDEFINED SYSTEM CALL!, %d", sys_call_number);
 			exit(-1);
