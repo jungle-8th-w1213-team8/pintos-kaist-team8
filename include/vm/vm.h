@@ -6,6 +6,11 @@
 #include "filesys/off_t.h"
 #include "threads/synch.h"
 
+/* 전역 매크로 ~ */
+#define STACK_MAX_GAP 32
+#define STACK_MAX_SIZE (1 << 20) // 1 MB
+/* ~ 전역 매크로 */
+
 /* 전역 변수 ~ */
 static struct list g_frame_table;
 static struct lock g_frame_lock;
@@ -81,7 +86,6 @@ struct page {
 struct frame {
 	void *kva;
 	struct page *page;
-	//struct thread *owner;
 	struct list_elem f_elem;
 };
 
@@ -105,7 +109,7 @@ struct page_operations {
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
 struct supplemental_page_table {
-	struct lock spt_lock;
+	// struck lock lpt
 	struct hash main_table;
 };
 
