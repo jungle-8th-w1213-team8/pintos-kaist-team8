@@ -323,6 +323,12 @@ int process_exec (void *f_name) {
 
 	/* We first kill the current context */
 	process_cleanup ();
+	
+	/*-- Project 3. --*/
+#ifdef VM
+	supplemental_page_table_init(&thread_current()->spt);
+#endif
+	/*-- Project 3. --*/
 
 	/*-- Project 2. User Programs 과제 --*/
 	// for argument parsing
@@ -530,6 +536,15 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
 	}
+	
+	// project 2. user programs - rox ~
+	// 현재 스레드의 실행 중인 파일에 이 파일을 추가.
+	t->running = file;
+
+	// 지금 읽고 있는 실행 파일에 뭐 쓰면 안되니까.
+	file_deny_write(file); // 해당 파일을 쓰기 금지로 등록
+	// ~ project 2. user programs - rox
+
 
 	/* Read and verify executable header. */
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -598,14 +613,6 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 
 	/* TODO: Your code goes here.
 	 * TODO: Implement argument passing (see project2/argument_passing.html). */
-
-	// project 2. user programs - rox ~
-	// 현재 스레드의 실행 중인 파일에 이 파일을 추가.
-	t->running = file;
-
-	// 지금 읽고 있는 실행 파일에 뭐 쓰면 안되니까.
-	file_deny_write(file); // 해당 파일을 쓰기 금지로 등록
-	// ~ project 2. user programs - rox
 
 	/* Set up stack. */
 	if (!setup_stack (if_))

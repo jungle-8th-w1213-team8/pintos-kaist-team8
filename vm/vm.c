@@ -174,57 +174,81 @@ spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
 }
 
 /* Get the struct frame, that will be evicted. */
-static struct frame *
-vm_get_victim (void) {
+static struct frame * vm_get_victim (void) {
 	struct frame *victim = NULL;
 	 /* TODO: The policy for eviction is up to you. */
+    struct thread *curr = thread_current();
+    struct list_elem *now = list_begin(&g_frame_table);
+    
+    lock_acquire(&g_frame_lock);
+    for (; now != list_end(&g_frame_table); now = list_next(now)) {
+        victim = list_entry(now, struct frame, f_elem);
 
-	return victim;
+        if (pml4_is_accessed(curr->pml4, victim->page->va)) {
+            pml4_set_accessed(curr->pml4, victim->page->va, 0);
+        } else {
+            lock_release(&g_frame_lock);
+            return victim;
+        }
+    }
+
+    for (; now != list_end(&g_frame_table); now = list_next(now)) {
+        victim = list_entry(now, struct frame, f_elem);
+
+        if (pml4_is_accessed(curr->pml4, victim->page->va)) {
+            pml4_set_accessed(curr->pml4, victim->page->va, 0);
+        } else {
+            lock_release(&g_frame_lock);
+            return victim;
+        }
+    }
+    
+    lock_release(&g_frame_lock);
+    ASSERT(now != NULL);
+    return victim;
 }
 
 /* Evict one page and return the corresponding frame.
  * Return NULL on error.*/
-static struct frame *
-vm_evict_frame (void) {
+static struct frame* vm_evict_frame (void) {
 	struct frame *victim UNUSED = vm_get_victim ();
 	/* TODO: swap out the victim and return the evicted frame. */
-
-	return NULL;
+    swap_out(victim->page);
+	return victim;
 }
+
 
 /* palloc()을 호출하고 프레임을 얻습니다. 사용 가능한 페이지가 없으면 페이지를 
  * 축출(evict)하고 반환합니다. 이 함수는 항상 유효한 주소를 반환합니다. 즉, 사용자 풀
  * 메모리가 가득 차면, 이 함수는 프레임을 축출하여 사용 가능한 메모리 공간을 확보합니다.*/
-static struct frame *
-vm_get_frame (void) {
-	lock_acquire(&g_frame_lock);
-	void *kva = palloc_get_page(PAL_USER);
+static struct frame* vm_get_frame (void) {
+	struct frame* new_frame = (struct frame *)malloc(sizeof(struct frame));
+	if(new_frame == NULL) {
+		// palloc_free_page(new_frame->kva);
+		// lock_release(&g_frame_lock);
+		PANIC("struct frame에 대한 malloc 실패!");
+	}
 
+	void* new_page = palloc_get_page(PAL_USER);
 	/* 할당 실패 시 eviction policy 집행 */
-	if (kva == NULL) {
-		// TODO: evict 대상 프레임 선택, swap out, 프레임 재활용.
-		lock_release(&g_frame_lock);
-		PANIC("Out of user memory and no eviction implemented yet.");
-	}
-	struct frame *frame = palloc_get_page(PAL_USER);
-
-	if(frame == NULL) {
-		palloc_free_page(kva);
-		lock_release(&g_frame_lock);
-		PANIC("struct frame 할당 실패!");
+	new_frame->kva = new_page;
+	if (!new_frame->kva){
+		new_frame = vm_evict_frame();
+		new_frame->page = NULL;
+        return new_frame;
 	}
 
-	frame->kva = kva;
-	frame->page = NULL;
+	new_frame->page = NULL;
 
+	lock_acquire(&g_frame_lock);
 	// 전역 frame table에 등록
-	list_push_back(&g_frame_table, &frame->f_elem);
-
-	ASSERT (frame != NULL);
-	ASSERT (frame->page == NULL);
+	list_push_back(&g_frame_table, &new_frame->f_elem);
 	lock_release(&g_frame_lock);
 
-	return frame;
+	ASSERT (new_frame != NULL);
+	ASSERT (new_frame->page == NULL);
+
+	return new_frame;
 }
 
 /* Growing the stack. */
