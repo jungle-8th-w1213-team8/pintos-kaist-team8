@@ -103,7 +103,7 @@ file_backed_destroy (struct page *page) {
 	struct file_page *file_page = &page->file;
     uint64_t *pml4 = thread_current()->pml4;
     // dirty면 write-back (frame이 존재할 때만)
-    if (page->frame && pml4_is_dirty(pml4, page->va) && file_page->writable) {
+    if (page->frame && pml4_is_dirty(pml4, page->va)) {
         file_write_at(file_page->file, page->va, file_page->read_bytes, file_page->ofs);
         pml4_set_dirty(pml4, page->va, 0);
     }
@@ -113,13 +113,13 @@ file_backed_destroy (struct page *page) {
 
     // TODO: 파일 닫기는 필요 시 별도 refcount 관리
     // lazy-file 통과 여부, 여기서 주석 처리하면 통과함
-//      (file_page->ref_count)--;
-//      // 해당 파일을 참조 하고 있는 ref_count를 세어봅니다. 0이 되는경우 해당 파일의 원본이라고 전제하고 그제야 file_close가 진행됩니다.
-// if (file_page->ref_count == 0) {
-//     file_close(file_page->file);
-//     free(file_page->ref_count);
-//     file_page->file = NULL;
-// }
+     (file_page->ref_count)--;
+     // 해당 파일을 참조 하고 있는 ref_count를 세어봅니다. 0이 되는경우 해당 파일의 원본이라고 전제하고 그제야 file_close가 진행됩니다.
+if (file_page->ref_count == 0) {
+    file_close(file_page->file);
+    free(file_page->ref_count);
+    file_page->file = NULL;
+}
 }
 
 /* Do the mmap */
@@ -184,47 +184,37 @@ do_mmap (void *addr, size_t length, int writable,
 void munmap_helper(struct supplemental_page_table *spt, struct page *page)
 {
 	struct file_page *file_page = &page->file;
-    if(pml4_is_dirty(thread_current()->pml4, page->va))
-    {
-        file_write_at(file_page->file, page->frame->kva, file_page->read_bytes, file_page->ofs);
-		pml4_set_dirty(thread_current()->pml4, page->va, 0);
+   if(pml4_is_dirty(thread_current()->pml4, page->va))
+   {
+       file_write_at(file_page->file, page->va, file_page->read_bytes, file_page->ofs);
+	    pml4_set_dirty(thread_current()->pml4, page->va, 0);
     }
 
-    if(page->frame)
+     if(page->frame)
     {
-        page->frame->page = NULL;
-        page->frame = NULL;
-    }
+         page->frame->page = NULL;
+         page->frame = NULL;
+     }
 
     // maybe insert frame to frame table
-	pml4_clear_page(thread_current()->pml4, page->va);
     spt_remove_page(spt, page);
+    
 }
 
 /* Do the munmap */
 void
 do_munmap (void *addr) {
- //   if(pg_round_down(addr) % PGSIZE != 0) return NULL;
+   // if ((uint64_t)addr % PGSIZE != 0) return;
     struct supplemental_page_table *spt = &thread_current()->spt;
     void *cur_addr = addr;
 
     struct page *page = spt_find_page(spt, cur_addr);
-    if (page == NULL || page->operations->type != VM_FILE)
-        return;
     struct file *target_file = page->file.file;
-    munmap_helper(spt, page);
-    // page remove from spt, maybe swap out?
 
-    bool is_same_file = true;
-    while(is_same_file)
-    {
+
+    while (page && page->operations->type == VM_FILE && page->file.file == target_file) {
+        spt_remove_page(spt, page);
         cur_addr += PGSIZE;
-        struct page *search_page = spt_find_page(spt, cur_addr);
-        if(search_page == NULL || search_page->operations->type != VM_FILE || search_page->file.file != target_file)
-        {
-            is_same_file = false;
-            break;
-        }
-        munmap_helper(spt, search_page);
+        page = spt_find_page(spt, cur_addr);
     }
 }

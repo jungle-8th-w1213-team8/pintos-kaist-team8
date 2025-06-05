@@ -9,6 +9,9 @@
 /* 전역 변수 ~ */
 static struct list g_frame_table;
 static struct lock g_frame_lock;
+
+static struct lock swap_lock;
+static struct bitmap *swap_table;
 /* ~ 전역 변수 */
 
 struct file_lazy_aux {
@@ -132,6 +135,5 @@ void vm_dealloc_page (struct page *page);
 bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
 
-bool hash_less_standard(struct hash_elem *, struct hash_elem *);
-
+void hash_destroy_items(struct hash_elem *e, void *aux);
 #endif  /* VM_VM_H */

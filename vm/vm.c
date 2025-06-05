@@ -7,6 +7,7 @@
 
 #include "threads/vaddr.h"
 #include "threads/mmu.h"
+#include "kernel/bitmap.h"
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -22,6 +23,9 @@ vm_init (void) {
 	/* TODO: Your code goes here. */
 	lock_init(&g_frame_lock);
 	list_init(&g_frame_table);
+
+	lock_init(&swap_lock);
+	swap_table = bitmap_create(50);
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -164,7 +168,8 @@ spt_insert_page (struct supplemental_page_table *spt ,struct page *page) {
 void
 spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
 	hash_delete(&spt->main_table, &page->page_hashelem);
-	vm_dealloc_page (page);
+	vm_dealloc_page(page);  // 페이지 구조체 해제
+
 	return true;
 }
 
@@ -246,7 +251,6 @@ vm_get_frame (void) {
 	frame->kva = kva;
 	frame->page = NULL;
 
-	// 전역 frame table에 등록
 	lock_acquire(&g_frame_lock);
 	list_push_back(&g_frame_table, &frame->f_elem);
 	lock_release(&g_frame_lock);
@@ -311,7 +315,6 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr, bool user, bool write
 		
 	return false;
 }
-
 
 /* Free the page.
  * DO NOT MODIFY THIS FUNCTION. */
@@ -384,7 +387,6 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 		void *upage = srcPage->va;
 		bool writable = srcPage->writable;
 
-		// VM_UNINIT 쪽 삽입을 허용을 안하는데 이 쪽 분기를 타겠냐고~
 		if(type == VM_UNINIT)
 		{
 			//vm_initializer *init = srcPage->uninit.init;
@@ -404,9 +406,14 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 	return true;
 }
 
+void hash_destroy_items(struct hash_elem *e, void *aux)
+{
+	struct page *page = hash_entry(e, struct page, page_hashelem);
+	vm_dealloc_page(page);
+}
+
 /* Free the resource hold by the supplemental page table */
 void
 supplemental_page_table_kill (struct supplemental_page_table *spt) {
-	hash_clear(&spt->main_table, NULL);
-	// temp. 좀더 정성껏 작성 할 것. 특히 파일 있는경우
+	hash_clear(&spt->main_table, hash_destroy_items);
 }
