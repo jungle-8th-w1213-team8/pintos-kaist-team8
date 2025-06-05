@@ -7,6 +7,7 @@
 #include <string.h>
 #include "userprog/gdt.h"
 #include "userprog/tss.h"
+#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -22,6 +23,9 @@
 #ifdef VM
 #include "vm/vm.h"
 #endif
+
+#define MAX_ARGS 128
+#define MAX_BUF 128
 
 static void process_cleanup (void);
 static bool load (const char *file_name, struct intr_frame *if_);
@@ -310,8 +314,22 @@ void argument_stack(char **argv, int argc, void **rsp) {
 /* Switch the current execution context to the f_name.
  * Returns -1 on fail. */
 int process_exec (void *f_name) {
-	char *file_name = f_name;
 	bool success;
+	char *file_name = f_name;
+
+	/*-- Project 2. User Programs 과제 --*/
+	// for argument parsing
+    char *parse[64]; // 파싱된 문자열(토큰)들을 저장
+    char *token, *save_ptr; // token: 현재 파싱된 문자열, save_ptr: strtok_r의 내부 상태 유지를 위한 포인터
+    int count = 0; // 파싱된 문자열의 개수
+		
+    for (token = strtok_r(file_name, " ", &save_ptr); // file_name(例: "ls -a -l")에서 첫 번째 공백(" ")을 기준으로 문자열을 자르고, 첫 번째 토큰("ls")을 token에 할당.
+			token != NULL; 							 // token이 NULL이 아닐 때까지 (더 이상 자를 문자열이 없을 때까지).
+			token = strtok_r(NULL, " ", &save_ptr)  // 다음 공백(" ")을 기준으로 문자열을 잘라, 다음 토큰을 token에 할당 (NULL을 넣어 이전 호출의 다음 지점부터 계속 파싱).
+	){
+        parse[count++] = token;
+	}
+	/*-- Project 2. User Programs 과제 --*/
 
 	/* We cannot use the intr_frame in the thread structure.
 	 * This is because when current thread rescheduled,
@@ -321,6 +339,10 @@ int process_exec (void *f_name) {
 	_if.cs = SEL_UCSEG;
 	_if.eflags = FLAG_IF | FLAG_MBS;
 
+	// lock_acquire(&g_filesys_lock);
+	// struct file *new_file = filesys_open(parse[0]);
+	// lock_release(&g_filesys_lock);
+	
 	/* We first kill the current context */
 	process_cleanup ();
 	
@@ -330,25 +352,13 @@ int process_exec (void *f_name) {
 #endif
 	/*-- Project 3. --*/
 
-	/*-- Project 2. User Programs 과제 --*/
-	// for argument parsing
-    char *parse[64]; // 파싱된 문자열(토큰)들을 저장
-    char *token, *save_ptr; // token: 현재 파싱된 문자열, save_ptr: strtok_r의 내부 상태 유지를 위한 포인터
-    int count = 0; // 파싱된 문자열의 개수
-		
-    for (token = strtok_r(file_name, " ", &save_ptr); // file_name(例: "ls -a -l")에서 첫 번째 공백(" ")을 기준으로 문자열을 자르고, 첫 번째 토큰("ls")을 token에 할당.
-		token != NULL; 								 // token이 NULL이 아닐 때까지 (더 이상 자를 문자열이 없을 때까지).
-		token = strtok_r(NULL, " ", &save_ptr)      // 다음 공백(" ")을 기준으로 문자열을 잘라, 다음 토큰을 token에 할당 (NULL을 넣어 이전 호출의 다음 지점부터 계속 파싱).
-	){
-        parse[count++] = token;
-	}
-	/*-- Project 2. User Programs 과제 --*/
-
+	// printf("process_exec() 함수 내부 - file_name: %s, parse[0]: %s\n",file_name,parse[0]);
+	
 	/* And then load the binary */
-	success = load (file_name, &_if);
+	success = load (parse[0], &_if);
     /* If load failed, quit. */
     if (!success){
-    	palloc_free_page(file_name);
+    	palloc_free_page(parse[0]);
         return -1;
 	}
 
@@ -530,10 +540,13 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 		goto done;
 	process_activate (thread_current ());
 
+   	lock_acquire(&g_filesys_lock);	
 	/* Open executable file. */
 	file = filesys_open (file_name);
+  	lock_release(&g_filesys_lock);
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
+  		// lock_release(&g_filesys_lock);
 		goto done;
 	}
 	
@@ -544,7 +557,6 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 	// 지금 읽고 있는 실행 파일에 뭐 쓰면 안되니까.
 	file_deny_write(file); // 해당 파일을 쓰기 금지로 등록
 	// ~ project 2. user programs - rox
-
 
 	/* Read and verify executable header. */
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr

@@ -43,8 +43,10 @@ void check_address(const uint64_t *addr);
  * @param addr: 주소값.
  */
 inline void check_address(const uint64_t *addr){
-	if (addr == NULL || !(is_user_vaddr(addr)) )
+
+	if (addr == NULL || !(is_user_vaddr(addr)) ){
 		exit(-1);
+	}
 }
 
 /**
@@ -58,91 +60,173 @@ inline void check_address_with_size(const uint64_t *addr, size_t size){
 		exit(-1);
 }
 
-/**
- * 아래 검증 래퍼 함수들의 본체.
- * 
- * @param user_addr 유저 주소
- * @param size 버퍼의 사이즈
- * @param writable "버퍼 입장에서" writable 여부
- */
-static void validate_user_memory(const void *buffer, size_t size, bool writable) {
-	if (buffer == NULL || !is_user_vaddr(buffer) || !is_user_vaddr(buffer + size - 1))
-		exit(-1);
+// /**
+//  * 아래 검증 래퍼 함수들의 본체.
+//  * 
+//  * @param user_addr 유저 주소
+//  * @param size 버퍼의 사이즈
+//  * @param writable "버퍼 입장에서" writable 여부
+//  */
+// static void validate_user_memory(const void *buffer, size_t size, bool writable) {
+// 	if (buffer == NULL || !is_user_vaddr(buffer) || !is_user_vaddr(buffer + size - 1))
+// 		exit(-1);
 
-	struct thread *curr = thread_current();
+// 	struct thread *curr = thread_current();
+// 	uint8_t *start = (uint8_t *)pg_round_down(buffer);
+// 	uint8_t *end = (uint8_t *)pg_round_down(buffer + size - 1);
+
+// 	for (uint8_t *addr = start; addr <= end; addr += PGSIZE) {
+// 		if (!is_user_vaddr(addr))
+// 			exit(-1);
+
+// 		void *page = pml4_get_page(curr->pml4, addr);
+
+// 		if (page == NULL) {
+// 			// 페이지 폴트 처리
+// 			if (!vm_try_handle_fault(NULL, addr, true, writable, true))
+// 				exit(-1);
+// 		} else if (writable) {
+// 			/**
+// 			 * 상세 설명
+// 			 *
+// 			 * 이미 매핑되어 있는 페이지의 경우, 쓰기 권한이 실제로 존재하는지 확인해야 한다.
+// 			 * 이는 단순히 pml4에 해당 가상 주소가 존재하는지만 확인하는 것으로는 충분하지 않다.
+// 			 * 
+// 			 * 가령, 코드 영역처럼 읽기만 가능하고 쓰기 권한이 없는 페이지는 
+// 			 * 유효한 매핑을 가지고 있을 수 있지만, 
+// 			 * 그 주소에 write하려고 하면 segmentation fault가 발생해야 한다.
+// 			 * 
+// 			 * 고로, writable == true인 경우에는 해당 PTE를 직접 추적하여
+// 			 * pte의 writable bit를 확인한다.
+// 			 * 
+// 			 *   - pml4e_walk(): 해당 가상 주소에 대한 최종 PTE를 획득.
+// 			 *   - is_writable(): 얻은 PTE가 쓰기 가능한지를 확인.
+// 			 */
+// 			uint64_t *pte = pml4e_walk(curr->pml4, (uint64_t)addr, false);
+// 			if (pte == NULL || !is_writable(pte))
+// 				exit(-1);
+// 		}
+// 	}
+// }
+
+// /**
+//  * 주의! 시스템 콜 중 write() 등에 사용!
+//  * 유저가 전달한 주소가 읽기 가능한 메모리 영역인지 확인.
+//  * 주어진 주소 범위내 각 페이지가 유저 공간에 속하며 페이지 폴트를 통해 접근이 가능한지 확인.
+//  * 접근 불가능한 경우 프로세스를 종료.
+//  * 
+//  * @param user_addr 유저 주소
+//  * @param size 버퍼의 사이즈
+//  */
+// void validate_read_buffer(const void *user_addr, size_t size) {
+// 	validate_user_memory(user_addr, size, false);
+// }
+
+// /**
+//  * 주의! 시스템 콜 중 read() 등에 사용!
+//  * 유저가 전달한 주소가 쓰기 가능한 메모리 영역인지 확인.
+//  * 주어진 주소 범위내 각 페이지가 유저 공간에 속하고 페이지 폴트를 통해 접근 가능하며 쓰기도 가능한지 확인.
+//  * 하나라도 만족하지 못하는 경우 프로세스를 종료.
+//  * 
+//  * @param user_addr 유저 주소
+//  * @param size 버퍼의 사이즈
+//  */
+// void validate_write_buffer(const void *user_addr, size_t size) {
+// 	validate_user_memory(user_addr, size, true);
+// }
+
+// /**
+//  * validate_buffer의 설명과 동일.
+//  * 
+//  * @param user_addr 유저 주소
+//  * @param size 버퍼의 사이즈
+//  */
+// void validate_buffer(const void *user_addr, size_t size) {
+// 	// 기존 로직에 따라 읽기용으로 간주
+// 	validate_user_memory(user_addr, size, false);
+// }
+
+
+
+// writeable 관련 오류가 뜰... sudo?
+void validate_buffer(const void *buffer, unsigned size)
+{
+	// 예외 처리
+	if (buffer == NULL)
+	{
+		exit(-1);
+	}
+
 	uint8_t *start = (uint8_t *)pg_round_down(buffer);
 	uint8_t *end = (uint8_t *)pg_round_down(buffer + size - 1);
+	struct thread *cur = thread_current();
 
-	for (uint8_t *addr = start; addr <= end; addr += PGSIZE) {
+	for (uint8_t *addr = start; addr <= end; addr += PGSIZE)
+	{
 		if (!is_user_vaddr(addr))
+		{
 			exit(-1);
+		}
 
-		void *page = pml4_get_page(curr->pml4, addr);
-
-		if (page == NULL) {
-			// 페이지 폴트 처리
-			if (!vm_try_handle_fault(NULL, addr, true, writable, true))
-				exit(-1);
-		} else if (writable) {
-			/**
-			 * 상세 설명
-			 *
-			 * 이미 매핑되어 있는 페이지의 경우, 쓰기 권한이 실제로 존재하는지 확인해야 한다.
-			 * 이는 단순히 pml4에 해당 가상 주소가 존재하는지만 확인하는 것으로는 충분하지 않다.
-			 * 
-			 * 가령, 코드 영역처럼 읽기만 가능하고 쓰기 권한이 없는 페이지는 
-			 * 유효한 매핑을 가지고 있을 수 있지만, 
-			 * 그 주소에 write하려고 하면 segmentation fault가 발생해야 한다.
-			 * 
-			 * 고로, writable == true인 경우에는 해당 PTE를 직접 추적하여
-			 * pte의 writable bit를 확인한다.
-			 * 
-			 *   - pml4e_walk(): 해당 가상 주소에 대한 최종 PTE를 획득.
-			 *   - is_writable(): 얻은 PTE가 쓰기 가능한지를 확인.
-			 */
-			uint64_t *pte = pml4e_walk(curr->pml4, (uint64_t)addr, false);
-			if (pte == NULL || !is_writable(pte))
+		if (pml4_get_page(cur->pml4, addr) == NULL)
+		{
+			if (!vm_try_handle_fault(NULL, addr, true, false, true))
 				exit(-1);
 		}
 	}
 }
 
-/**
- * 주의! 시스템 콜 중 write() 등에 사용!
- * 유저가 전달한 주소가 읽기 가능한 메모리 영역인지 확인.
- * 주어진 주소 범위내 각 페이지가 유저 공간에 속하며 페이지 폴트를 통해 접근이 가능한지 확인.
- * 접근 불가능한 경우 프로세스를 종료.
- * 
- * @param user_addr 유저 주소
- * @param size 버퍼의 사이즈
- */
-void validate_read_buffer(const void *user_addr, size_t size) {
-	validate_user_memory(user_addr, size, false);
+void validate_read_buffer(const void *buffer, unsigned size)
+{
+	if (is_user_vaddr(buffer) == false || is_user_vaddr(buffer + size - 1) == false)
+	{
+		exit(-1);
+	}
+	validate_buffer(buffer, size);
 }
 
-/**
- * 주의! 시스템 콜 중 read() 등에 사용!
- * 유저가 전달한 주소가 쓰기 가능한 메모리 영역인지 확인.
- * 주어진 주소 범위내 각 페이지가 유저 공간에 속하고 페이지 폴트를 통해 접근 가능하며 쓰기도 가능한지 확인.
- * 하나라도 만족하지 못하는 경우 프로세스를 종료.
- * 
- * @param user_addr 유저 주소
- * @param size 버퍼의 사이즈
- */
-void validate_write_buffer(const void *user_addr, size_t size) {
-	validate_user_memory(user_addr, size, true);
+void validate_write_buffer(const void *buffer, unsigned size)
+{
+	if (is_user_vaddr(buffer) == false || is_user_vaddr(buffer + size - 1) == false)
+	{
+		exit(-1);
+	}
+	validate_buffer(buffer, size);
+
+	uint8_t *start = (uint8_t *)pg_round_down(buffer);
+	uint8_t *end = (uint8_t *)pg_round_down(buffer + size - 1);
+	struct thread *cur = thread_current();
+
+	for (uint8_t *addr = start; addr <= end; addr += PGSIZE)
+	{
+		if (!is_user_vaddr(addr))
+			exit(-1);
+
+		void *page = pml4_get_page(cur->pml4, addr);
+		if (page == NULL)
+		{
+			// 여기서는 writeable=true로 fault 처리 시도
+			if (!vm_try_handle_fault(NULL, addr, true, true, true))
+				exit(-1);
+		}
+		else
+		{
+			// 이미 매핑되어 있다면 write 권한 확인
+			uint64_t *pte = pml4e_walk(cur->pml4, (uint64_t)addr, false);
+			struct page *cur_page = spt_find_page(&cur->spt, addr);
+			bool page_writable = cur_page->writable;
+			if (pte == NULL || (!is_writable(pte) && !page_writable))
+			{
+				exit(-1); // 쓰기 권한이 없으면 종료
+			}
+			else if (pte == NULL || (!is_writable(pte) && page_writable))
+			{
+				vm_try_handle_fault(NULL, addr, true, true, true);
+			}
+		}
+	}
 }
 
-/**
- * validate_buffer의 설명과 동일.
- * 
- * @param user_addr 유저 주소
- * @param size 버퍼의 사이즈
- */
-void validate_buffer(const void *user_addr, size_t size) {
-	// 기존 로직에 따라 읽기용으로 간주
-	validate_user_memory(user_addr, size, false);
-}
 
 /**
  * mmap
@@ -242,20 +326,28 @@ void exit(int status) {
 int write(int fd, const void *buffer, unsigned size){
     validate_read_buffer(buffer, size); // 이거 validate_read_buffer라고 쓴 거 맞습니다!!!!!
 
+	struct thread *curr = thread_current();
+
+	lock_acquire(&g_filesys_lock);
+
 	int bytes_write = 0;
 	if (fd == STDOUT_FILENO) { // stdout면 직접 작성
 		putbuf(buffer, size);
 		bytes_write = size;
 	} else {
-		if (fd < 2) return -1;
+		if (fd < 2) {
+			lock_release(&g_filesys_lock);
+			return -1;
+		}
 
 		struct file *file = process_get_file_by_fd(fd);
-		if (file == NULL)
+		if (file == NULL){
+			lock_release(&g_filesys_lock);
 			return -1;
-		lock_acquire(&g_filesys_lock);
+		}
 		bytes_write = file_write(file, buffer, size);
-		lock_release(&g_filesys_lock);
 	}
+	lock_release(&g_filesys_lock);
 
 	return bytes_write;
 }
@@ -351,7 +443,7 @@ int open(const char *filename) {
 	fd = process_add_file(file_obj);
 
 	if (fd == -1) { // fd table 꽉찬 경우 그냥 닫아버림
-		file_close(file_obj);
+		// file_close(file_obj);
     	file_obj = NULL;
 		goto done;
 	}
@@ -453,6 +545,7 @@ void syscall_init (void) {
 /* The main system call interface */
 void syscall_handler (struct intr_frame *f UNUSED) {
 	int sys_call_number = (int) f->R.rax; // 시스템 콜 번호 받아옴
+	// printf("syscall_handler - sys_call_number: %d\n",sys_call_number);
 
 	// Project 3. Virtual Memory ~
 	/**
@@ -470,66 +563,68 @@ void syscall_handler (struct intr_frame *f UNUSED) {
 	 */
 	switch (sys_call_number) {		//  system call number가 rax에 있음.
 		case SYS_HALT:
-			// printf("SYS_HALT [%d]", syscall_n);
+			// printf("SYS_HALT [%d]\n", sys_call_number);
 			halt();	 // Pintos 자체를 종료
 			break;
 		case SYS_EXIT:
-			// printf("SYS_EXIT [%d]", sys_call_number);
+			// printf("SYS_EXIT [%d]\n", sys_call_number);
 			exit(f->R.rdi);	// 현재 프로세스를 종료
 			break;
 		case SYS_FORK:
-			// printf("SYS_FORK [%d]", sys_call_number);
+			// printf("SYS_FORK [%d]\n", sys_call_number);
 			f->R.rax = fork(f->R.rdi, f);
 			break;
 		case SYS_EXEC:
-			// printf("SYS_EXEC [%d]", sys_call_number);
+			// printf("SYS_EXEC [%d]\n", sys_call_number);
 			f->R.rax = exec(f->R.rdi);
        		break;
 		case SYS_WAIT:
-			// printf("SYS_WAIT [%d]", sys_call_number);
+			// printf("SYS_WAIT [%d]\n", sys_call_number);
 			f->R.rax = process_wait(f->R.rdi);
 			break;
 		case SYS_CREATE:
-			// printf("SYS_CREATE [%d]", sys_call_number);
+			// printf("SYS_CREATE [%d]\n", sys_call_number);
 			f->R.rax = create(f->R.rdi, f->R.rsi);
 			break;
 		case SYS_REMOVE:
-			// printf("SYS_REMOVE [%d]", sys_call_number);
+			// printf("SYS_REMOVE [%d]\n", sys_call_number);
 			f->R.rax = remove(f->R.rdi);
 			break;
 		case SYS_OPEN:
-			// printf("SYS_OPEN [%d]", sys_call_number);
+			// printf("SYS_OPEN [%d]\n", sys_call_number);
     		f->R.rax = open((const char *)f->R.rdi);
 			break;
 		case SYS_FILESIZE:
-			// printf("SYS_FILESIZE [%d]", sys_call_number);
+			// printf("SYS_FILESIZE [%d]\n", sys_call_number);
 			f->R.rax = filesize(f->R.rdi);
 			break;
 		case SYS_READ:
-			// printf("SYS_READ [%d]", sys_call_number);
+			// printf("SYS_READ [%d]\n", sys_call_number);
 			f->R.rax = read(f->R.rdi, f->R.rsi, f->R.rdx);
 			break;
 		case SYS_WRITE:
-			// printf("SYS_WRITE [%d]", sys_call_number);
+			// printf("SYS_WRITE [%d]\n", sys_call_number);
 			f->R.rax = write(f->R.rdi, f->R.rsi, f->R.rdx);
 			break;
 		case SYS_SEEK:
-			// printf("SYS_SEEK [%d]", sys_call_number);
+			// printf("SYS_SEEK [%d]\n", sys_call_number);
 			seek(f->R.rdi, f->R.rsi);
 			break;
 		case SYS_TELL:
-			printf("SYS_TELL [%d]", sys_call_number);
+			// printf("SYS_TELL [%d]\n", sys_call_number);
 			// f->R.rax = tell(f->R.rdi);
-			printf("tell() undefined! [%d]", sys_call_number);
+			// printf("tell() undefined! [%d]", sys_call_number);
 			break;
 		case SYS_CLOSE:
-			// printf("SYS_CLOSE [%d]", sys_call_number);
+			// printf("SYS_CLOSE [%d]\n", sys_call_number);
 			close(f->R.rdi);
 			break;
 		case SYS_MMAP:
+			// printf("SYS_MMAP [%d]\n", sys_call_number);
 			f->R.rax = mmap((void *)f->R.rdi, (size_t)f->R.rsi, (int)f->R.rdx, (int)f->R.r10, (off_t)f->R.r8);
 			break;
 		case SYS_MUNMAP:
+			// printf("SYS_MUNMAP [%d]\n", sys_call_number);
 			munmap((void *)f->R.rdi);
 			break;
 		default:
