@@ -80,7 +80,6 @@ file_backed_swap_in (struct page *page, void *kva) {
 static bool
 file_backed_swap_out (struct page *page) {
 	struct file_page *file_page UNUSED = &page->file;
-
 	// dirty 시 동기화
 	if (pml4_is_dirty(thread_current()->pml4, page->va)) {
 		file_write_at(file_page->file, page->va, file_page->read_bytes, file_page->ofs);
@@ -92,8 +91,9 @@ file_backed_swap_out (struct page *page) {
 	page->frame = NULL;
 
 	// pml4에서 clear
+	//pml4_clear_page(page->owner->pml4, page->va);
 	pml4_clear_page(thread_current()->pml4, page->va);
-
+    
 	return true;
 }
 
@@ -169,11 +169,10 @@ do_mmap (void *addr, size_t length, int writable,
                         current_addr += PGSIZE;
                     }     
                 file_close(r_file);
-                // 만약 페이지를 4개 할당했는데 3번쨰에서 실패하면 1, 2번쨰를 다 정리해야한다.
-                // 그럼 뭐 어떻게 해야해?.. current_addr 단위로 더하고있는데, 해당 내용으로 다시 찾아다가 지워야한다는거잖아요
-                // https://www.perplexity.ai/search/about-pintos-4ADhN6AcRuWMJB2AGVzxSg#101
-
                 return NULL;
+            }
+            else
+            {
             }
             current_addr += PGSIZE;
         }
@@ -181,40 +180,43 @@ do_mmap (void *addr, size_t length, int writable,
     return addr;
 }
 
-void munmap_helper(struct supplemental_page_table *spt, struct page *page)
-{
-	struct file_page *file_page = &page->file;
-   if(pml4_is_dirty(thread_current()->pml4, page->va))
-   {
-       file_write_at(file_page->file, page->va, file_page->read_bytes, file_page->ofs);
-	    pml4_set_dirty(thread_current()->pml4, page->va, 0);
-    }
 
-     if(page->frame)
-    {
-         page->frame->page = NULL;
-         page->frame = NULL;
-     }
 
-    // maybe insert frame to frame table
-    spt_remove_page(spt, page);
-    
-}
-
-/* Do the munmap */
-void
-do_munmap (void *addr) {
-   // if ((uint64_t)addr % PGSIZE != 0) return;
+void do_munmap (void *addr) {
     struct supplemental_page_table *spt = &thread_current()->spt;
+    struct page *first_page = spt_find_page(spt, addr);
+    
+    if (!first_page) return;
+    
+    // uninit 페이지인 경우 파일 정보를 aux에서 가져 올 것이다
+    struct file *target_file;
+    if (first_page->operations->type == VM_UNINIT) {
+        struct file_lazy_aux *aux = first_page->uninit.aux;
+        target_file = aux->file;
+    } else {
+        target_file = first_page->file.file;
+    }
+    
     void *cur_addr = addr;
-
-    struct page *page = spt_find_page(spt, cur_addr);
-    struct file *target_file = page->file.file;
-
-
-    while (page && page->operations->type == VM_FILE && page->file.file == target_file) {
+    while (true) {
+        struct page *page = spt_find_page(spt, cur_addr);
+        if (!page) break;
+        
+        // 파일 정보 안전하게 확인
+        struct file *page_file;
+        if (page->operations->type == VM_UNINIT) {
+            struct file_lazy_aux *aux = page->uninit.aux;
+            page_file = aux->file;
+        } else if (page->operations->type == VM_FILE) {
+            page_file = page->file.file;
+        } else {
+            break;  // 다른 타입이면 중단
+        }
+        
+        if (page_file != target_file) break;
+        
         spt_remove_page(spt, page);
+        vm_dealloc_page(page);
         cur_addr += PGSIZE;
-        page = spt_find_page(spt, cur_addr);
     }
 }

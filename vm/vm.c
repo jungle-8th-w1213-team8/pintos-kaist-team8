@@ -118,6 +118,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 			goto err;
 		}
 		page->writable = writable;
+		page->owner = thread_current();
 
 		// hash_insert 대신 spt_insert_page 사용하게끔 수정 :
 		bool is_inserted = spt_insert_page(spt, page);
@@ -167,10 +168,8 @@ spt_insert_page (struct supplemental_page_table *spt ,struct page *page) {
 
 void
 spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
-	hash_delete(&spt->main_table, &page->page_hashelem);
-	vm_dealloc_page(page);  // 페이지 구조체 해제
 
-	return true;
+	hash_delete(&spt->main_table, &page->page_hashelem);
 }
 
 /* Get the struct frame, that will be evicted. */
@@ -182,8 +181,8 @@ vm_get_victim (void) {
  	for (e = list_begin (&g_frame_table); e != list_end (&g_frame_table); e = list_next (e))
 	{
    		struct frame *frame = list_entry (e, struct frame, f_elem);
-		if(pml4_is_accessed(&thread_current()->pml4, frame->page->va))
-			pml4_set_accessed(&thread_current()->pml4, frame->page->va, false);
+		if(pml4_is_accessed(&frame->page->owner->pml4, frame->page->va))
+			pml4_set_accessed(&frame->page->owner->pml4, frame->page->va, false);
 		else
 		{
 			lock_release(&g_frame_lock);
@@ -194,7 +193,7 @@ vm_get_victim (void) {
 	for (e = list_begin (&g_frame_table); e != list_end (&g_frame_table); e = list_next (e))
 	{
 		struct frame *frame = list_entry (e, struct frame, f_elem);
-		 if(!pml4_is_accessed(&thread_current()->pml4, frame->page->va))
+		 if(!pml4_is_accessed(&frame->page->owner->pml4, frame->page->va))
 		 {
 			lock_release(&g_frame_lock);
 			return frame;
@@ -307,6 +306,7 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr, bool user, bool write
 
 	    if (vm_do_claim_page(page)) {
 			// 핵심: write fault이고 writable 페이지라면 dirty 설정
+			//pml4_set_accessed(thread_current()->pml4, page->va, true);
 			if (write && page->writable) {
 				pml4_set_dirty(thread_current()->pml4, page->va, true);
 			}
