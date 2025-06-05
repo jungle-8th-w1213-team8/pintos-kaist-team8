@@ -252,9 +252,9 @@ int write(int fd, const void *buffer, unsigned size){
 		struct file *file = process_get_file_by_fd(fd);
 		if (file == NULL)
 			return -1;
-		lock_acquire(&filesys_lock);
+		lock_acquire(&g_filesys_lock);
 		bytes_write = file_write(file, buffer, size);
-		lock_release(&filesys_lock);
+		lock_release(&g_filesys_lock);
 	}
 
 	return bytes_write;
@@ -281,8 +281,10 @@ int exec(char *file_name) {
 	// 새로운 페이지 한 장(4KB)을 제로필 후 확보.
 	// June 02 : User Zero 동시 옵션으로 업데이트, 도움이 되느지는 잘 모르..겟ㅇ어요
 	char *page_copied = palloc_get_page(PAL_USER | PAL_ZERO); 
-	if (page_copied == NULL)
-		exit(-1); // 할당 실패 시 즉시 종료.
+	if (page_copied == NULL){
+		palloc_free_page(page_copied);
+		return -1;
+	}
 	
 	// 파라미터의 file_name을, 방금 확보한 커널 메모리에 복사.
 	strlcpy(page_copied, file_name, strlen(file_name) + 1); // strlcpy는 마지막에 NULL자를 포함함. 그래서 +1.
@@ -303,19 +305,31 @@ int exec(char *file_name) {
  */
 bool create(const char *file, unsigned initial_size) {		
 	check_address(file);
-	return filesys_create(file, initial_size);
+
+	lock_acquire(&g_filesys_lock);
+	bool result = filesys_create(file, initial_size);
+	lock_release(&g_filesys_lock);
+
+	return result;
 }
 
 /**
  * remove - 파일을 삭제.
- * 성공일 경우 true, 실패일 경우 false.
- * 
+ * 성공: true, 실패: false.
+ *
  * @param file: 삭제할 파일.
  */
-bool remove(const char *file) {	
+bool remove(const char *file) {
 	check_address(file);
-	return filesys_remove(file);
+	bool result;
+
+	lock_acquire(&g_filesys_lock);
+	result = filesys_remove(file);
+	lock_release(&g_filesys_lock);
+
+	return result;
 }
+
 
 /**
  * open - 파일을 오픈.
@@ -325,33 +339,44 @@ bool remove(const char *file) {
  */
 int open(const char *filename) {
 	check_address(filename); // 이상한 포인터면 즉시 종료
+	int fd = -1;
+
+	lock_acquire(&g_filesys_lock);
 	struct file *file_obj = filesys_open(filename);
 	
 	if (file_obj == NULL) {
-		return -1;
+		goto done;
 	}
 
-	int fd = process_add_file(file_obj);
+	fd = process_add_file(file_obj);
 
 	if (fd == -1) { // fd table 꽉찬 경우 그냥 닫아버림
 		file_close(file_obj);
     	file_obj = NULL;
+		goto done;
 	}
 	
+	goto done;
+done:
+	lock_release(&g_filesys_lock);
 	return fd;
 }
 
 /**
  * close - 파일을 닫음.
- * 성공일 경우 fd, 실패일 경우 -1.
- * 
- * @param file: 닫을 파일.
+ * 파일 디스크립터를 닫고, 파일 리소스를 해제.
+ *
+ * @param fd: 닫을 파일 디스크립터.
  */
-void close(int fd){
+void close(int fd) {
 	struct file *file_obj = process_get_file_by_fd(fd);
 	if (file_obj == NULL)
 		return;
+
+	lock_acquire(&g_filesys_lock);
 	file_close(file_obj);
+	lock_release(&g_filesys_lock);
+
 	process_close_file_by_id(fd);
 }
 
@@ -405,9 +430,9 @@ int read(int fd, void *buffer, unsigned size){
 
     // 4. 정상적인 파일이면 read
     off_t ret;
-    lock_acquire(&filesys_lock);
+    lock_acquire(&g_filesys_lock);
     ret = file_read(file, buffer, size);
-    lock_release(&filesys_lock);
+    lock_release(&g_filesys_lock);
     return ret;
 }
 
@@ -422,7 +447,7 @@ void syscall_init (void) {
 	write_msr(MSR_SYSCALL_MASK,
 			FLAG_IF | FLAG_TF | FLAG_DF | FLAG_IOPL | FLAG_AC | FLAG_NT);
 
-	lock_init(&filesys_lock); // Project 2. User Programs
+	lock_init(&g_filesys_lock); // Project 2. User Programs
 }
 
 /* The main system call interface */

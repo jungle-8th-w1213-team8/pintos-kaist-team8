@@ -1,8 +1,6 @@
 #ifndef USERPROG_SYSCALL_H
 #define USERPROG_SYSCALL_H
 
-struct lock filesys_lock;
-
 void syscall_init (void);
 
 void seek(int fd, unsigned position);
@@ -15,5 +13,8 @@ void close(int fd);
 int filesize(int fd);
 int read(int fd, void *buffer, unsigned size);
 
+/* 전역 변수 ~ */
+struct lock g_filesys_lock;
+/* ~ 전역 변수 */
 
 #endif /* userprog/syscall.h */
