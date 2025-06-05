@@ -9,9 +9,6 @@
 /* 전역 변수 ~ */
 static struct list g_frame_table;
 static struct lock g_frame_lock;
-
-static struct lock swap_lock;
-static struct bitmap *swap_table;
 /* ~ 전역 변수 */
 
 struct file_lazy_aux {

@@ -23,9 +23,6 @@ vm_init (void) {
 	/* TODO: Your code goes here. */
 	lock_init(&g_frame_lock);
 	list_init(&g_frame_table);
-
-	lock_init(&swap_lock);
-	swap_table = bitmap_create(50);
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -181,6 +178,11 @@ vm_get_victim (void) {
  	for (e = list_begin (&g_frame_table); e != list_end (&g_frame_table); e = list_next (e))
 	{
    		struct frame *frame = list_entry (e, struct frame, f_elem);
+		if(frame->page == NULL)
+		{
+			lock_release(&g_frame_lock);
+			return frame;
+		}
 		if(pml4_is_accessed(&frame->page->owner->pml4, frame->page->va))
 			pml4_set_accessed(&frame->page->owner->pml4, frame->page->va, false);
 		else
@@ -193,11 +195,8 @@ vm_get_victim (void) {
 	for (e = list_begin (&g_frame_table); e != list_end (&g_frame_table); e = list_next (e))
 	{
 		struct frame *frame = list_entry (e, struct frame, f_elem);
-		 if(!pml4_is_accessed(&frame->page->owner->pml4, frame->page->va))
-		 {
-			lock_release(&g_frame_lock);
-			return frame;
-		 }
+		lock_release(&g_frame_lock);
+		return frame;
 	}
 	lock_release(&g_frame_lock);
 	return NULL;
@@ -209,66 +208,109 @@ static struct frame *
 vm_evict_frame (void) {
 	struct frame *victim = vm_get_victim ();
 	if(victim == NULL) return NULL;
-
-	if(!swap_out(victim->page)) return NULL;
-	pml4_clear_page(&thread_current()->pml4, victim->page->va);
-
-
-	/* TODO: swap out the victim and return the evicted frame. */
-	victim->page->frame = NULL;
+	if(victim->page != NULL && victim->page->operations->type == VM_ANON)
+	{
+		swap_out(victim->page);
+		victim->page->frame = NULL;
+	}
 	victim->page = NULL;
-	// 이거 swap out이랑 루틴이 중복되는데 흠
 
+	//pml4_clear_page(&victim->page->owner->pml4, victim->page->va);
 	memset(victim->kva, 0, PGSIZE);
+
 	return victim;
 }
 
 /* palloc()을 호출하고 프레임을 얻습니다. 사용 가능한 페이지가 없으면 페이지를 
  * 축출(evict)하고 반환합니다. 이 함수는 항상 유효한 주소를 반환합니다. 즉, 사용자 풀
  * 메모리가 가득 차면, 이 함수는 프레임을 축출하여 사용 가능한 메모리 공간을 확보합니다.*/
-static struct frame *
-vm_get_frame (void) {
-	void *kva = palloc_get_page(PAL_USER);
-	struct frame *frame = NULL;
+// static struct frame *
+// vm_get_frame (void) {
+// 	void *kva = palloc_get_page(PAL_USER);
+// 	struct frame *frame = NULL;
 
-	/* 할당 실패 시 eviction policy 집행 */
-	if (kva == NULL) {
-		frame = vm_evict_frame();
-	}
+// 	/* 할당 실패 시 eviction policy 집행 */
+// 	if (kva == NULL) {
+// 		frame = vm_evict_frame();
+// 		printf("debug : need to evict \n");
+// 	}
 
-	if(frame == NULL)
-	{
-		frame = malloc(sizeof(struct frame));
-		if(frame == NULL)
-		{
-			if(kva) palloc_free_page(kva);
-			PANIC("struct frame 할당 실패!");
-		}
+// 	if(frame == NULL)
+// 	{
+// 		frame = malloc(sizeof(struct frame));
+// 		if(frame == NULL)
+// 		{
+// 			if(kva) palloc_free_page(kva);
+// 			PANIC("struct frame 할당 실패!");
+// 		}
 	
-	}
+// 	}
 
-	frame->kva = kva;
-	frame->page = NULL;
+// 	if(frame->kva != NULL)
+// 		frame->kva = kva;
 
-	lock_acquire(&g_frame_lock);
-	list_push_back(&g_frame_table, &frame->f_elem);
-	lock_release(&g_frame_lock);
+// 	frame->page = NULL;
 
-	ASSERT (frame != NULL);
-	ASSERT (frame->page == NULL);
+// 	lock_acquire(&g_frame_lock);
+// 	list_push_back(&g_frame_table, &frame->f_elem);
+// 	lock_release(&g_frame_lock);
 
-	return frame;
+// 	ASSERT (frame != NULL);
+// 	ASSERT (frame->page == NULL);
+// 	return frame;
+// }
+static struct frame *vm_get_frame (void) {
+    struct frame *frame = NULL;
+    void *kva = palloc_get_page(PAL_USER);
+    
+    if (kva != NULL) {
+        // 새 페이지 할당 성공
+        frame = malloc(sizeof(struct frame));
+        if (frame == NULL) {
+            palloc_free_page(kva);
+            PANIC("struct frame 할당 실패!");
+        }
+        frame->kva = kva;
+    } else {
+        // 메모리 부족 - eviction 필요
+        frame = vm_evict_frame();
+        if (frame == NULL) {
+            PANIC("vm_evict_frame 실패!");
+        }
+        // evict된 frame은 이미 유효한 kva를 가지고 있음
+        // frame->kva는 건드리지 않음!
+    }
+    
+    frame->page = NULL;
+    
+    lock_acquire(&g_frame_lock);
+    list_push_back(&g_frame_table, &frame->f_elem);
+    lock_release(&g_frame_lock);
+    
+    ASSERT(frame != NULL);
+    ASSERT(frame->kva != NULL);
+    ASSERT(is_kernel_vaddr(frame->kva));  // 디버깅용
+    return frame;
 }
 
 /* Growing the stack. */
 static void
 vm_stack_growth (void *addr) {
-	void *pg_addr = pg_round_down(addr);
-    while (vm_alloc_page(VM_ANON, pg_addr, true)) {  // SPT에 페이지 추가
-        struct page *pg = spt_find_page(&thread_current()->spt, pg_addr);
-        vm_claim_page(pg_addr);  // 물리 메모리까지 할당
-        pg_addr += PGSIZE;
-	}
+	// void *pg_addr = pg_round_down(addr);
+    // while (vm_alloc_page(VM_ANON, pg_addr, true)) {  // SPT에 페이지 추가
+    //     struct page *pg = spt_find_page(&thread_current()->spt, pg_addr);
+    //     vm_claim_page(pg_addr);  // 물리 메모리까지 할당
+    //     pg_addr += PGSIZE;
+	// }
+	void* page_addr = pg_round_down(addr);
+    struct page* page = spt_find_page(&thread_current()->spt, page_addr);
+    while (page == NULL) {
+        vm_alloc_page(VM_ANON, page_addr, true);  // ← VM_ANON 생성!
+        vm_claim_page(page_addr);
+        page_addr += PGSIZE;
+        page = spt_find_page(&thread_current()->spt, page_addr);
+    }
+
 }
 
 /* Handle the fault on write_protected page */
@@ -362,7 +404,6 @@ vm_do_claim_page (struct page *page) {
 	//printf("vm_do_claim_page()의 pml4_set_page 결과 - %d\n",is_page_set);
 	bool is_swapped_in = swap_in(page, frame->kva);
 	//printf("vm_do_claim_page()의 swap_in 결과 - %d\n",is_swapped_in);
-
 	return is_swapped_in;
 }
 

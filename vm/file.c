@@ -25,6 +25,7 @@ file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
     ASSERT(type == VM_FILE);
     struct file_lazy_aux *aux = (struct file_lazy_aux *) page->uninit.aux;
 
+
     // 파일 seek은 thread-safe하지 않으므로 file_read_at을 사용!
 	// TODO: 오작동 시 걍 seek 쓸 것.
     struct file *fl_file = aux->file;
@@ -50,7 +51,8 @@ file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
     }
     // 나머지 영역을 zero-fill
 
-    memset(kva + fl_read_bytes, 0, fl_zero_bytes);
+	size_t total_zero = PGSIZE - actually;
+	memset(kva + fl_read_bytes, 0, total_zero);
 
 	/* Set up the handler */
 
@@ -71,21 +73,35 @@ file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
 /* Swap in the page by read contents from the file. */
 static bool
 file_backed_swap_in (struct page *page, void *kva) {
+
 	struct file_page *file_page = &page->file;
 
-	return lazy_load_segment(page, file_page);
+        // 파일에서 데이터 읽기
+        if(file_read_at(file_page->file, kva, 
+            file_page->read_bytes, file_page->ofs) != (int)file_page->read_bytes)
+            {
+                return false;
+
+            }
+            
+// Zero padding
+memset(kva + file_page->read_bytes, 0, file_page->zero_bytes);
+
+return true;
+	//return lazy_load_segment(page, file_page);
+
 }
 
 /* Swap out the page by writeback contents to the file. */
 static bool
 file_backed_swap_out (struct page *page) {
+
 	struct file_page *file_page UNUSED = &page->file;
 	// dirty 시 동기화
 	if (pml4_is_dirty(thread_current()->pml4, page->va)) {
-		file_write_at(file_page->file, page->va, file_page->read_bytes, file_page->ofs);
-		pml4_set_dirty(thread_current()->pml4, page->va, 0);
+	 	file_write_at(file_page->file, page->va, file_page->read_bytes, file_page->ofs);
+	 	pml4_set_dirty(thread_current()->pml4, page->va, 0);
 	}
-
 	// 상호간 연결 해제
 	page->frame->page = NULL;
 	page->frame = NULL;
@@ -156,7 +172,9 @@ do_mmap (void *addr, size_t length, int writable,
             struct file_lazy_aux *aux = malloc(sizeof(struct file_lazy_aux));
             aux->file = r_file;
             aux->ofs = offset + (i * PGSIZE);
-            aux->read_bytes = length - (i * PGSIZE) < PGSIZE ? length - (i * PGSIZE) : PGSIZE;
+            size_t remaining = length > i * PGSIZE ? length - i * PGSIZE : 0;
+            aux->read_bytes = remaining < PGSIZE ? remaining : PGSIZE;
+           //aux->read_bytes = length - (i * PGSIZE) < PGSIZE ? length - (i * PGSIZE) : PGSIZE;
             aux->zero_bytes = PGSIZE - aux->read_bytes;
             aux->writable = writable;
             aux->ref_count = ref_count;
@@ -165,7 +183,9 @@ do_mmap (void *addr, size_t length, int writable,
                     current_addr = start_addr;
                     for (size_t j = 0; j < i; j++)
                     {
-                        vm_dealloc_page(pml4_get_page(thread_current()->pml4, current_addr));
+                        struct page *pg = pml4_get_page(thread_current()->pml4, current_addr);
+                        spt_remove_page(&thread_current()->spt, pg);
+                        vm_dealloc_page(pg);
                         current_addr += PGSIZE;
                     }     
                 file_close(r_file);
@@ -173,6 +193,7 @@ do_mmap (void *addr, size_t length, int writable,
             }
             else
             {
+                // only for debug
             }
             current_addr += PGSIZE;
         }

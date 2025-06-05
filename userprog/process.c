@@ -22,7 +22,6 @@
 #ifdef VM
 #include "vm/vm.h"
 #endif
-
 static void process_cleanup (void);
 static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
@@ -776,8 +775,9 @@ bool lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
 	ASSERT(page != NULL);
-	struct file_page *fla = (struct file_page *) aux;
+	struct file_lazy_aux *fla = (struct file_lazy_aux *) aux;
 	ASSERT(fla != NULL);
+
 
 	// page->frame는 이미 할당되어 있음
 	uint8_t *kva = page->frame->kva;
@@ -785,32 +785,51 @@ bool lazy_load_segment (struct page *page, void *aux) {
     // file_read_at을 사용!
 
     // 파일 seek은 thread-safe하지 않으므로 file_read_at을 사용!
-	// TODO: 오작동 시 걍 seek 쓸 것.
-    struct file *fl_file = fla->file;
-    off_t fl_offset = fla->ofs;
-    size_t fl_read_bytes = fla->read_bytes;
-    size_t fl_zero_bytes = fla->zero_bytes;
-	bool fl_writable = fla->writable;
-    size_t file_len = file_length(fl_file);
-
-    // 실제로 읽을 수 있는 양 계산
-    size_t available = 0;
-    if (fl_offset < file_len) {
-        available = file_len - fl_offset;
-        if (available > fl_read_bytes)
-            available = fl_read_bytes;
-    }
-    // 파일에서 read_bytes만큼 읽기
-    off_t actually = file_read_at(fl_file, kva, fl_read_bytes, fl_offset);
-    if (actually != available)
-    {
-        return false;
-    }
-	// 나머지는 zero fill
-	memset(kva + fla->read_bytes, 0, fla->zero_bytes);
-
-	return true;
+	    // 파일 끝 확인
+		size_t file_remaining = file_length(fla->file) - fla->ofs;
+		size_t actual_read = fla->read_bytes < file_remaining ? fla->read_bytes : file_remaining;
+		
+		printf("[DEBUG] File remaining: %d, trying to read: %d, actual read: %d\n",
+			   file_remaining, fla->read_bytes, actual_read);
+		
+		file_seek(fla->file, fla->ofs);
+		off_t actually = file_read(fla->file, kva, actual_read);  // actual_read 사용!
+		
+		// 나머지를 0으로 채우기
+		memset(kva + actually, 0, PGSIZE - actually);
+		
+		return actually >= 0;
 }
+
+// 	// TODO: 오작동 시 걍 seek 쓸 것.
+//     struct file *fl_file = fla->file;
+//     off_t fl_offset = fla->ofs;
+//     size_t fl_read_bytes = fla->read_bytes;
+//     size_t fl_zero_bytes = fla->zero_bytes;
+// 	bool fl_writable = fla->writable;
+//     size_t file_len = file_length(fl_file);
+
+//     // 실제로 읽을 수 있는 양 계산
+//     size_t available = 0;
+//     if (fl_offset < file_len) {
+//         available = file_len - fl_offset;
+//         if (available > fl_read_bytes)
+//             available = fl_read_bytes;
+//     }
+//     // 파일에서 read_bytes만큼 읽기
+//     off_t actually = file_read_at(fl_file, kva, available, fl_offset);
+//     if (actually != available)
+//     {
+//         return false;
+//     }
+// 	// 나머지는 zero fill
+// 	size_t total_zero = PGSIZE - actually;
+// 	memset(kva + actually, 0, total_zero);
+// 	//memset(kva + fla->read_bytes, 0, total_zero);
+// 	//printf("[DEBUG] lazy load: file=%p, ofs=%d, read_bytes=%d\n",
+// 	//	fla->file, fla->ofs, fla->read_bytes);
+// 	return true;
+// }
 
 /* Loads a segment starting at offset OFS in FILE at address
  * UPAGE.  In total, READ_BYTES + ZERO_BYTES bytes of virtual
@@ -847,7 +866,6 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		fla->zero_bytes = page_zero_bytes; // 이 페이지에서 read_bytes만큼 읽고 공간이 남아 0으로 채워야 하는 바이트 수
 		fla->writable = writable;
 
-		
 			if (!vm_alloc_page_with_initializer (VM_ANON, upage,
 				writable, lazy_load_segment, fla))
 					return false;
