@@ -789,14 +789,21 @@ bool lazy_load_segment (struct page *page, void *aux) {
 	// 	// 파일 읽기 실패
 	// 	return false;
 	// }
+	
+	struct file *file = fla->file;
+	off_t ofs = fla->ofs;
+	size_t page_read_bytes = fla->read_bytes;
+	size_t page_zero_bytes 	= PGSIZE - page_read_bytes;
 
     // file_read_at을 사용!
     if (file_read_at(fla->file, kva, fla->read_bytes, fla->ofs) != (int) fla->read_bytes) {
+		palloc_free_page(kva);
+		free(fla);
         return false;
     }
 
 	// 나머지는 zero fill
-	memset(kva + fla->read_bytes, 0, fla->zero_bytes);
+	memset(kva + fla->read_bytes, 0, page_zero_bytes);
 
 	return true;
 }

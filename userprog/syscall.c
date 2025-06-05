@@ -145,6 +145,60 @@ void validate_buffer(const void *user_addr, size_t size) {
 }
 
 /**
+ * mmap
+ */
+void* mmap(void *addr, size_t length, int writable, int fd, off_t offset){
+	#ifdef VM
+	struct thread *curr = thread_current();
+	struct file *file;
+
+	// may fail if the file opened as fd has a length of zero bytes
+	if ((long long)length <= 0)
+		return NULL;
+
+	// must fail if addr is not page-aligned
+	if (pg_round_down(addr) != addr)
+		return NULL;
+
+	// Tries to mmap an invalid offset
+	if (offset > (off_t)length)
+		return NULL;
+
+	if (offset % PGSIZE != 0)
+		return NULL;
+
+	// must fail if overlaps any existing set of mapped pages
+	if (spt_find_page(&curr->spt, addr))
+		return NULL;
+
+	// if addr is 0, it must fail
+	if (addr == NULL)
+		return NULL;
+	
+	// try to mmap over kernel
+	// addr이 커널 시작 주소인지 || 64비트 이상으로 사용하는지
+	if ((long long)addr == KERN_BASE || is_kernel_vaddr(addr))
+		return NULL;
+
+	// the fd representing console input and output are not mappable.
+	if (fd == 0 || fd == 1)
+		return NULL;
+
+	// file open as fd
+	if (!(file = curr->fd_table[fd]))
+		return NULL;
+
+	return do_mmap(addr, length, writable, file, offset);
+	#endif
+}
+
+void munmap(void *addr){
+	#ifdef VM
+	do_munmap(addr);
+	#endif
+}
+
+/**
  * halt - 머신을 halt함.
  * 
  */
@@ -448,7 +502,10 @@ void syscall_handler (struct intr_frame *f UNUSED) {
 			close(f->R.rdi);
 			break;
 		case SYS_MMAP:
-			printf("Should implement mmap \n");
+			f->R.rax = mmap((void *)f->R.rdi, (size_t)f->R.rsi, (int)f->R.rdx, (int)f->R.r10, (off_t)f->R.r8);
+			break;
+		case SYS_MUNMAP:
+			munmap((void *)f->R.rdi);
 			break;
 		default:
 			printf("FATAL: UNDEFINED SYSTEM CALL!, %d", sys_call_number);
