@@ -397,7 +397,7 @@ int process_wait (tid_t child_tid UNUSED) {
 	
 	sema_down(&child->wait_sema); 
 	int exit_status = child->exit_status;
-	timer_msleep(1);
+	// timer_msleep(1); // 그 동안 고마웠어!
 	list_remove(&child->child_elem);
 	sema_up(&child->exit_sema);
 	return exit_status;
@@ -421,7 +421,7 @@ void process_exit (void) {
 
 	// 프로세스의 파일 디스크립터들만 닫았으니 이제 바이너리를 닫기
 	if (curr->running != NULL) {
-		file_allow_write(curr->running);
+		file_allow_write(curr->running); // 잡았다 요놈!
 		file_close(curr->running);
 	}
 	process_cleanup ();

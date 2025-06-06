@@ -466,23 +466,36 @@ thread_get_recent_cpu (void) {
 // }
 void donate_priority(void) {
     struct thread *curr = thread_current();
+
+    // 현재 스레드가 기다리고 있는 락을 가져옴
     struct lock *lock = curr->wait_lock;
+
+    // 우선순위 기부의 중첩 깊이를 제한할 변수 초기화
     int depth = 0;
 
-    while (lock && depth < 8) { // 최대 8단계의 중첩 기부 허용
+    // 기다리는 락이 있고, 최대 깊이(8단계)를 넘지 않은 경우 반복
+    while (lock && depth < 8) { // 최대 8단계의 nested donation 허용
+        // 락 보유자가 없는 경우 더 이상 기부할 대상이 없으므로 종료
         if (!lock->holder)
             return;
 
-        if (lock->holder->priority < curr->priority) {
-            lock->holder->priority = curr->priority;
-        }
-
+        // 락의 보유자가 현재 스레드보다 낮은 우선순위다?
+        // 우선순위를 현재 스레드의 우선순위로 기부 (덮어씀)
+		lock->holder->priority = 
+			(lock->holder->priority < curr->priority) ? 
+				curr->priority : lock->holder->priority;
+        
+        // 다음 기부 대상은 현재 락의 보유자가 됨
         curr = lock->holder;
+
+        // 다음 기부를 위해, 그 스레드가 기다리고 있는 락을 가져옴
         lock = curr->wait_lock;
+
+        // 깊이 증가
         depth++;
     }
+	// 나락도 락이다!
 }
-
 
 void remove_with_lock(struct lock *lock)  {
     struct thread *t = thread_current();
