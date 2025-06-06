@@ -320,7 +320,15 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED,
     if (write && (page == NULL || !page->writable))  
 		return false;
 
-	return vm_do_claim_page(page);
+	    if (vm_do_claim_page(page)) {
+			// 핵심: write fault이고 writable 페이지라면 dirty 설정
+			pml4_set_accessed(thread_current()->pml4, page->va, true);
+			if (write && page->writable) {
+				pml4_set_dirty(thread_current()->pml4, page->va, true);
+			}
+			return true;
+		}
+	return false;
 }
 
 
