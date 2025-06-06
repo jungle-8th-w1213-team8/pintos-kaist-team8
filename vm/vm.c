@@ -170,36 +170,39 @@ spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
 }
 
 /* Get the struct frame, that will be evicted. */
-static struct frame *
-vm_get_victim (void) {
-	struct frame *victim = NULL;
- 	struct list_elem *e;
-	lock_acquire(&g_frame_lock);
- 	for (e = list_begin (&g_frame_table); e != list_end (&g_frame_table); e = list_next (e))
-	{
-   		struct frame *frame = list_entry (e, struct frame, f_elem);
-		if(frame->page == NULL)
-		{
-			lock_release(&g_frame_lock);
-			return frame;
-		}
-		if(pml4_is_accessed(&frame->page->owner->pml4, frame->page->va))
-			pml4_set_accessed(&frame->page->owner->pml4, frame->page->va, false);
-		else
-		{
-			lock_release(&g_frame_lock);
-			return frame;
-		}
- 	}
-	
-	for (e = list_begin (&g_frame_table); e != list_end (&g_frame_table); e = list_next (e))
-	{
-		struct frame *frame = list_entry (e, struct frame, f_elem);
-		lock_release(&g_frame_lock);
-		return frame;
-	}
-	lock_release(&g_frame_lock);
-	return NULL;
+static struct frame *vm_get_victim (void) {
+    struct frame *victim = NULL;
+    struct list_elem *e;
+    
+    lock_acquire(&g_frame_lock);
+    
+    // Clock algorithm: 2번의 sweep
+    for (int sweep = 0; sweep < 2; sweep++) {
+        for (e = list_begin(&g_frame_table); e != list_end(&g_frame_table); e = list_next(e)) {
+            struct frame *frame = list_entry(e, struct frame, f_elem);
+            
+            if (frame->page == NULL) {
+                victim = frame;
+                goto found;
+            }
+            
+            if (pml4_is_accessed(frame->page->owner->pml4, frame->page->va)) {
+                pml4_set_accessed(frame->page->owner->pml4, frame->page->va, false);
+            } else {
+                victim = frame;
+                goto found;
+            }
+        }
+    }
+    
+    // Fallback: 첫 번째 frame
+    if (!list_empty(&g_frame_table)) {
+        victim = list_entry(list_begin(&g_frame_table), struct frame, f_elem);
+    }
+    
+found:
+    lock_release(&g_frame_lock);
+    return victim;
 }
 
 /* Evict one page and return the corresponding frame.
@@ -208,14 +211,16 @@ static struct frame *
 vm_evict_frame (void) {
 	struct frame *victim = vm_get_victim ();
 	if(victim == NULL) return NULL;
-	if(victim->page != NULL && victim->page->operations->type == VM_ANON)
+	
+	if(victim->page != NULL)
 	{
+		pml4_clear_page(&victim->page->owner->pml4, victim->page->va);
 		swap_out(victim->page);
 		victim->page->frame = NULL;
+		victim->page = NULL;
 	}
-	victim->page = NULL;
 
-	//pml4_clear_page(&victim->page->owner->pml4, victim->page->va);
+
 	memset(victim->kva, 0, PGSIZE);
 
 	return victim;
@@ -271,6 +276,7 @@ static struct frame *vm_get_frame (void) {
             PANIC("struct frame 할당 실패!");
         }
         frame->kva = kva;
+		list_push_back(&g_frame_table, &frame->f_elem);
     } else {
         // 메모리 부족 - eviction 필요
         frame = vm_evict_frame();
@@ -283,13 +289,10 @@ static struct frame *vm_get_frame (void) {
     
     frame->page = NULL;
     
-    lock_acquire(&g_frame_lock);
-    list_push_back(&g_frame_table, &frame->f_elem);
-    lock_release(&g_frame_lock);
     
     ASSERT(frame != NULL);
     ASSERT(frame->kva != NULL);
-    ASSERT(is_kernel_vaddr(frame->kva));  // 디버깅용
+	
     return frame;
 }
 
@@ -328,6 +331,7 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr, bool user, bool write
 	// 아! 커널 쓰레드는 page fault 날 일 자체가 없다!
 	if (addr == NULL || is_kernel_vaddr(addr))
 		return false;
+
 	
 	/* TODO: Validate the fault */
 	// todo: 페이지 폴트가 스택 확장에 대한 유효한 경우인지를 확인해야 합니다.
@@ -339,7 +343,11 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr, bool user, bool write
 	if (is_target_stack(rsp,addr)) vm_stack_growth(addr);
 
 	page = spt_find_page(spt, addr);
-	if (page == NULL) return false;
+	if (page == NULL)
+	{
+		return false;
+	}
+
 
 		if (!not_present) {
 			if (page && write && !page->writable) return false;  // 프로세스 종료시킴
@@ -348,13 +356,12 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr, bool user, bool write
 
 	    if (vm_do_claim_page(page)) {
 			// 핵심: write fault이고 writable 페이지라면 dirty 설정
-			//pml4_set_accessed(thread_current()->pml4, page->va, true);
+			pml4_set_accessed(thread_current()->pml4, page->va, true);
 			if (write && page->writable) {
 				pml4_set_dirty(thread_current()->pml4, page->va, true);
 			}
 			return true;
 		}
-		
 	return false;
 }
 
@@ -404,6 +411,7 @@ vm_do_claim_page (struct page *page) {
 	//printf("vm_do_claim_page()의 pml4_set_page 결과 - %d\n",is_page_set);
 	bool is_swapped_in = swap_in(page, frame->kva);
 	//printf("vm_do_claim_page()의 swap_in 결과 - %d\n",is_swapped_in);
+
 	return is_swapped_in;
 }
 

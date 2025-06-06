@@ -453,16 +453,22 @@ thread_get_recent_cpu (void) {
 
 
 /*-- Priority donation 과제 --*/
-void donate_priority() {
-    struct thread *t = thread_current();
-    int priority = t->priority;
+void donate_priority(void) {
+    struct thread *curr = thread_current();
+    struct lock *lock = curr->wait_lock;
+    int depth = 0;
 
-    for (int depth = 0; depth < 8; depth++) {
-        if (t->wait_lock == NULL)
-            break;
+    while (lock && depth < 8) { // 최대 8단계의 중첩 기부 허용
+        if (!lock->holder)
+            return;
 
-        t = t->wait_lock->holder;
-        t->priority = priority;
+        if (lock->holder->priority < curr->priority) {
+            lock->holder->priority = curr->priority;
+        }
+
+        curr = lock->holder;
+        lock = curr->wait_lock;
+        depth++;
     }
 }
 

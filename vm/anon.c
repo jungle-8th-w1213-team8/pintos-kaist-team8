@@ -31,7 +31,6 @@ vm_anon_init (void) {
 	size_t total_sectors = disk_size(swap_disk);
 	size_t swap_slots = total_sectors / 8;
 
-	printf("%d, %d \n\n", total_sectors, swap_slots);
 	swap_table = bitmap_create(swap_slots);
 	bitmap_set_all(swap_table, false);
 }
@@ -72,10 +71,6 @@ anon_swap_out (struct page *page) {
                    page->frame->kva + i * DISK_SECTOR_SIZE);
     }
 	bitmap_set(swap_table, anon_page->swap_num, true);
-
-		//page->frame->page = NULL;
-		//page->frame = NULL;
-		pml4_clear_page(page->owner->pml4, page->va);
 	return true;
 	
 }
