@@ -56,46 +56,26 @@ static bool file_backed_swap_in (struct page *page, void *kva) {
 
 /* Swap out the page by writeback contents to the file. */
 static bool
-file_backed_swap_out(struct page *page)
-{
-	// file_page는 file-backed 페이지에 대한 메타데이터를 담고 있는 구조체
+file_backed_swap_out (struct page *page) {
 	struct file_page *file_page UNUSED = &page->file;
-	/** TODO: dirty bit 확인해서 write back
-	 * pml4_is_dirty를 사용해서 dirty bit를 확인하세요
-	 * write back을 할 때는 aux에 저장된 파일 정보를 사용
-	 * file_write를 사용하면 될 것 같아요
-	 * dirty_bit 초기화 (pml4_set_dirty)
-	 */
 	struct thread *curr = thread_current();
-	bool dirty_bit = pml4_is_dirty(curr->pml4, page->va);
+	struct file_lazy_aux *aux;
 
-	// dirty bit가 true이면, 즉 메모리에서 수정된 경우
-	if (dirty_bit == true)
-	{
-		// 공유 자원 접근 → 락 걸고 접근
-		lock_acquire(&g_filesys_lock);
-		if (file_write_at(file_page->file,		// mmap된 파일 객체
-						  page->frame->kva,		// 페이지의 실제 물리 주소
-						  file_page->read_bytes, // 실제로 파일에 기록할 바이트 수
-						  file_page->ofs)	// 파일 내 시작 위치
-			!= (off_t)file_page->read_bytes)
-		{
-			// write 실패하면 lock 해제 해야겠지?
-			lock_release(&g_filesys_lock);
-			return false;
-		}
-		// 파일 쓰기 완료 후 락 해제
-		lock_release(&g_filesys_lock);
+	// first check if the page is dirty
+	if (pml4_is_dirty(curr->pml4, page->va)){
+		aux = (struct file_lazy_aux *) page->uninit.aux;
 
-		// 더티 비트 클리어(쓰기 완!)
-		pml4_set_dirty(curr->pml4, page->va, false);
+		// writing the contents back to the file.
+		file_write_at(aux->file, page->frame->kva, aux->read_bytes, aux->ofs);
+
+		// After you swap out the page, remember to turn off the dirty bit for the page.
+		pml4_set_dirty (curr->pml4, page->va, 0);
 	}
-	// 초기화는 victim에서
-	page->frame->page = NULL;
-	page->frame = NULL;
 
+	pml4_clear_page(curr->pml4, page->va);	// 페이지 테이블에서는 지워주기
 	return true;
 }
+
 
 /* Destory the file backed page. PAGE will be freed by the caller. */
 static void
@@ -142,6 +122,7 @@ void* do_mmap (void *addr, size_t length, int writable, struct file *file, off_t
 		aux->file = mapping_file;
 		aux->ofs = offset;
 		aux->read_bytes = page_read_bytes;
+		aux->zero_bytes = page_zero_bytes;
 
 		// return NULL which is not a valid address to map a file
 		if (!vm_alloc_page_with_initializer (VM_FILE, addr,
@@ -178,9 +159,11 @@ void do_munmap (void *addr) {
 		// written back to the file
 		if (pml4_is_dirty(curr->pml4, page->va)){
 			aux = (struct file_lazy_aux *) page->uninit.aux;
+
 			lock_acquire(&g_filesys_lock);
 			file_write_at(aux->file, addr, aux->read_bytes, aux->ofs);
 			lock_release(&g_filesys_lock);
+
             pml4_set_dirty (curr->pml4, page->va, 0);
 		}
 
