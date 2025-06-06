@@ -49,7 +49,6 @@ anon_initializer (struct page *page, enum vm_type type, void *kva) {
 static bool
 anon_swap_in (struct page *page, void *kva) {
 	struct anon_page *anon_page = &page->anon;
-	//pml4_set_accessed(page->owner->pml4, page->va, true);
 	for (int i = 0; i < 8; i++) {
         disk_read(swap_disk, anon_page->swap_num * 8 + i,
                   kva + i * DISK_SECTOR_SIZE);
@@ -75,7 +74,7 @@ anon_swap_out (struct page *page) {
 
 		//page->frame->page = NULL;
 		//page->frame = NULL;
-		pml4_clear_page(page->owner->pml4, page->va);
+		pml4_clear_page(thread_current()->pml4, page->va);
 	return true;
 	
 }

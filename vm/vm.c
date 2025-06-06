@@ -115,7 +115,6 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 			goto err;
 		}
 		page->writable = writable;
-		page->owner = thread_current();
 
 		// hash_insert 대신 spt_insert_page 사용하게끔 수정 :
 		bool is_inserted = spt_insert_page(spt, page);
@@ -183,8 +182,8 @@ vm_get_victim (void) {
 			lock_release(&g_frame_lock);
 			return frame;
 		}
-		if(pml4_is_accessed(&frame->page->owner->pml4, frame->page->va))
-			pml4_set_accessed(&frame->page->owner->pml4, frame->page->va, false);
+		if(pml4_is_accessed(thread_current()->pml4, frame->page->va))
+			pml4_set_accessed(thread_current()->pml4, frame->page->va, false);
 		else
 		{
 			lock_release(&g_frame_lock);
@@ -215,8 +214,7 @@ vm_evict_frame (void) {
 	}
 	victim->page = NULL;
 
-	//pml4_clear_page(&victim->page->owner->pml4, victim->page->va);
-	memset(victim->kva, 0, PGSIZE);
+	//memset(victim->kva, 0, PGSIZE);
 
 	return victim;
 }

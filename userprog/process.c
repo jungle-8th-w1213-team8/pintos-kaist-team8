@@ -789,9 +789,6 @@ bool lazy_load_segment (struct page *page, void *aux) {
 		size_t file_remaining = file_length(fla->file) - fla->ofs;
 		size_t actual_read = fla->read_bytes < file_remaining ? fla->read_bytes : file_remaining;
 		
-		printf("[DEBUG] File remaining: %d, trying to read: %d, actual read: %d\n",
-			   file_remaining, fla->read_bytes, actual_read);
-		
 		file_seek(fla->file, fla->ofs);
 		off_t actually = file_read(fla->file, kva, actual_read);  // actual_read 사용!
 		

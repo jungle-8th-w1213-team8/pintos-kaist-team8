@@ -109,7 +109,6 @@ file_backed_swap_out (struct page *page) {
 	// pml4에서 clear
 	//pml4_clear_page(page->owner->pml4, page->va);
 	pml4_clear_page(thread_current()->pml4, page->va);
-    
 	return true;
 }
 
