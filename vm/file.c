@@ -79,8 +79,7 @@ file_backed_swap_out (struct page *page) {
 }
 
 /* Destroy the file-backed page. PAGE will be freed by the caller. */
-static void
-file_backed_destroy(struct page *page) {
+static void file_backed_destroy(struct page *page) {
 	struct file_page *file_page = &page->file;
 	struct thread *curr = thread_current();
 

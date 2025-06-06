@@ -404,30 +404,34 @@ int process_wait (tid_t child_tid UNUSED) {
 }
 
 /* Exit the process. This function is called by thread_exit (). */
-void
-process_exit (void) {
+void process_exit (void) {
 	struct thread *curr = thread_current ();
 	/* TODO: Your code goes here.
-	 * TODO: Implement process termination message (see
-	 * TODO: project2/process_termination.html).
-	 * TODO: We recommend you to implement process resource cleanup here. */
+		* TODO: Implement process termination message (see
+		* TODO: project2/process_termination.html).
+		* TODO: We recommend you to implement process resource cleanup here. */
 
-	// printf("process_exit()!");
+
+	// 프로세스의 파일 디스크립터들을 닫기
 	for (int i = 2; i < FDCOUNT_LIMIT; i++) {
 		if (curr->fd_table[i] != NULL)
 			close(i);
 	}
 	palloc_free_multiple(curr->fd_table, FDT_PAGES);
-	file_close(curr->running); // 현재 실행 중인 파일도 닫는다. load()에 있었던 걸 여기로 옮김.
+
+	// 프로세스의 파일 디스크립터들만 닫았으니 이제 바이너리를 닫기
+	if (curr->running != NULL) {
+		file_allow_write(curr->running);
+		file_close(curr->running);
+	}
 	process_cleanup ();
-	
+
 	sema_up(&curr->wait_sema); // 대기 중이던 부모를 깨우기
 	sema_down(&curr->exit_sema); // 자기 (부모의 시그널 대기)
 }
 
 /* Free the current process's resources. */
-static void
-process_cleanup (void) {
+static void process_cleanup (void) {
 	struct thread *curr = thread_current ();
 
 #ifdef VM

@@ -442,10 +442,33 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 	}
 	return true;
 }
+void supplemental_page_table_kill (struct supplemental_page_table *spt) {
+    struct hash_iterator i;
 
-/* Free the resource hold by the supplemental page table */
-void
-supplemental_page_table_kill (struct supplemental_page_table *spt) {
-	hash_clear(&spt->main_table, NULL);
-	// temp. 좀더 정성껏 작성 할 것. 특히 파일 있는경우..
+	// 아예 없는 경우에 대한 얼리 리턴들
+    if (spt == NULL)
+        return;
+    if (&spt->main_table == NULL)
+        return;
+    if (hash_empty(&spt->main_table))
+        goto done;
+
+	// Initializes a hash iterator 'i' to the first element 
+	// of the 'main_table' hash table in the supplemental page table 'spt'.
+    hash_first(&i, &spt->main_table);
+
+    // 모든 엔트리를 순회하며 파일 매핑된 페이지를 unmap
+    while (hash_next(&i)) {
+        struct page *page = hash_entry(hash_cur(&i), struct page, page_hashelem);
+
+        // 파일 매핑(mmap)된 페이지라면 do_munmap 호출
+        if (page_get_type(page) == VM_FILE) {
+            // 해당 페이지의 시작 주소에서 unmap
+            do_munmap(page->va);
+        }
+    }
+	goto done;
+done:
+    // 모든 엔트리 해제 (페이지 자체의 자원 해제는 각 destroy에서)
+    hash_clear(&spt->main_table, NULL);
 }
