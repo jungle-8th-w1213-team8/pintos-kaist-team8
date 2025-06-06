@@ -81,10 +81,14 @@ file_backed_swap_out (struct page *page) {
 static void
 file_backed_destroy (struct page *page) {
 	struct file_page *file_page = &page->file;
+	struct file_lazy_aux *aux = (struct file_lazy_aux *) page->uninit.aux;
     uint64_t *pml4 = thread_current()->pml4;
     // dirty면 write-back (frame이 존재할 때만)
+   // printf("%p , %p, %d, %d\n", file_page->file, page->va, file_page->read_bytes, file_page->ofs);
+    //printf("%p , %p, %d, %d\n", aux->file, page->va, aux->read_bytes, aux->ofs);
+
     if (page->frame && pml4_is_dirty(pml4, page->va)) {
-        file_write_at(file_page->file, page->va, file_page->read_bytes, file_page->ofs);
+        file_write_at(aux->file, page->frame->kva, aux->read_bytes, aux->ofs);
         pml4_set_dirty(pml4, page->va, 0);
     }
 
@@ -93,13 +97,17 @@ file_backed_destroy (struct page *page) {
 
     // TODO: 파일 닫기는 필요 시 별도 refcount 관리
     // lazy-file 통과 여부, 여기서 주석 처리하면 통과함
-     (file_page->ref_count)--;
-     // 해당 파일을 참조 하고 있는 ref_count를 세어봅니다. 0이 되는경우 해당 파일의 원본이라고 전제하고 그제야 file_close가 진행됩니다.
-if (file_page->ref_count == 0) {
-    file_close(file_page->file);
-    free(file_page->ref_count);
-    file_page->file = NULL;
-}
+    if(file_page->ref_count != NULL)
+    {
+        (file_page->ref_count)--;
+        // 해당 파일을 참조 하고 있는 ref_count를 세어봅니다. 0이 되는경우 해당 파일의 원본이라고 전제하고 그제야 file_close가 진행됩니다.
+   if (file_page->ref_count == 0) {
+       file_close(aux->file);
+       free(file_page->ref_count);
+       file_page->file = NULL;
+   }
+    }
+
 }
 
 void* do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offset) {
@@ -109,7 +117,9 @@ void* do_mmap (void *addr, size_t length, int writable, struct file *file, off_t
 	// Set these bytes to zero
     size_t read_bytes = length > (size_t)file_length(file) ? (size_t)file_length(file) : length;
     size_t zero_bytes = PGSIZE - read_bytes % PGSIZE;
-	
+    
+
+    size_t page_cnt = 0;
 	// obtain a separate and independent reference
 
 	lock_acquire(&g_filesys_lock);
@@ -118,6 +128,9 @@ void* do_mmap (void *addr, size_t length, int writable, struct file *file, off_t
 
 	// starting from offset byte
 	while (read_bytes > 0 || zero_bytes > 0) {
+        page_cnt++;
+    int *ref_count = malloc(sizeof(int));
+    *ref_count = page_cnt;
 		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
@@ -128,6 +141,7 @@ void* do_mmap (void *addr, size_t length, int writable, struct file *file, off_t
 		aux->ofs = offset;
 		aux->read_bytes = page_read_bytes;
 		aux->zero_bytes = page_zero_bytes;
+        aux->ref_count = ref_count;
 
 		// return NULL which is not a valid address to map a file
 		if (!vm_alloc_page_with_initializer (VM_FILE, addr,

@@ -422,17 +422,25 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 			struct page *newPage = spt_find_page(dst, upage);
 			if(srcPage->frame != NULL)
 				memcpy(newPage->frame->kva, srcPage->frame->kva, PGSIZE);
-			
 		}
 	}
 	return true;
 }
 
 /* Free the resource hold by the supplemental page table */
+void hash_destroy_items(struct hash_elem *e, void *aux)
+{
+	struct page *page = hash_entry(e, struct page, page_hashelem);
+	struct file_lazy_aux *A = (struct file_lazy_aux*) page->uninit.aux;
+if(page->operations->type == VM_FILE && A->ref_count != NULL)
+	vm_dealloc_page(page);  // 이때 file_backed_destroy가 호출됨
+
+}
+/* Free the resource hold by the supplemental page table */
 void
 supplemental_page_table_kill (struct supplemental_page_table *spt) {
-	hash_clear(&spt->main_table, NULL);
-	// temp. 좀더 정성껏 작성 할 것. 특히 파일 있는경우..
+	hash_clear(&spt->main_table, hash_destroy_items);
+
 }
 
 /* vm.c: Generic interface for virtual memory objects. */
