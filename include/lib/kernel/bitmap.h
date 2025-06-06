@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include <inttypes.h>
 
+#define BITMAP_ERROR SIZE_MAX
+
 /* Bitmap abstract data type. */
 
 /* Creation and destruction. */
