@@ -3,6 +3,7 @@
 #include "vm/vm.h"
 #include "threads/vaddr.h"
 #include "userprog/process.h"
+#include "threads/mmu.h"
 #include "userprog/syscall.h"
 
 /* DO NOT MODIFY this struct */
@@ -19,18 +20,19 @@ vm_file_init (void) {
 }
 
 /* Initialize the file backed page */
-bool file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
+bool
+file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
     ASSERT(page != NULL);
     ASSERT(type == VM_FILE);
-
+    struct file_lazy_aux *aux = (struct file_lazy_aux *) page->uninit.aux;
 	page->operations = &file_ops;
-	struct file_page *file_page UNUSED = &page->file;
-	return true;
+    return true;
 }
 
 /* Swap in the page by read contents from the file. */
-static bool file_backed_swap_in (struct page *page, void *kva) {
-    // page->file에 실제 정보가 다 채워져 있다면 아래처럼 직접 
+static bool
+file_backed_swap_in (struct page *page, void *kva) {
+
 	struct file_page *file_page UNUSED = &page->file;
 	struct file_lazy_aux *aux = (struct file_lazy_aux *) page->uninit.aux;
 	struct file *file = aux->file;
@@ -57,46 +59,49 @@ static bool file_backed_swap_in (struct page *page, void *kva) {
 /* Swap out the page by writeback contents to the file. */
 static bool
 file_backed_swap_out (struct page *page) {
+
 	struct file_page *file_page UNUSED = &page->file;
-	struct thread *curr = thread_current();
-	struct file_lazy_aux *aux;
-
-	// first check if the page is dirty
-	if (pml4_is_dirty(curr->pml4, page->va)){
-		aux = (struct file_lazy_aux *) page->uninit.aux;
-
-		// writing the contents back to the file.
-		file_write_at(aux->file, page->frame->kva, aux->read_bytes, aux->ofs);
-
-		// After you swap out the page, remember to turn off the dirty bit for the page.
-		pml4_set_dirty (curr->pml4, page->va, 0);
+	// dirty 시 동기화
+	if (pml4_is_dirty(thread_current()->pml4, page->va)) {
+	 	file_write_at(file_page->file, page->va, file_page->read_bytes, file_page->ofs);
+	 	pml4_set_dirty(thread_current()->pml4, page->va, 0);
 	}
+	// 상호간 연결 해제
+    //page->frame->page = NULL;
+	//page->frame = NULL;
 
-	pml4_clear_page(curr->pml4, page->va);	// 페이지 테이블에서는 지워주기
+	// pml4에서 clear
+	//pml4_clear_page(page->owner->pml4, page->va);
+	pml4_clear_page(thread_current()->pml4, page->va);
+    
 	return true;
 }
-
 
 /* Destory the file backed page. PAGE will be freed by the caller. */
 static void
 file_backed_destroy (struct page *page) {
-	struct file_page *file_page UNUSED = &page->file;
-    // uint64_t *pml4 = thread_current()->pml4;
+	struct file_page *file_page = &page->file;
+    uint64_t *pml4 = thread_current()->pml4;
+    // dirty면 write-back (frame이 존재할 때만)
+    if (page->frame && pml4_is_dirty(pml4, page->va)) {
+        file_write_at(file_page->file, page->va, file_page->read_bytes, file_page->ofs);
+        pml4_set_dirty(pml4, page->va, 0);
+    }
 
-    // // dirty면 write-back (frame이 존재할 때만)
-    // if (page->frame && pml4_is_dirty(pml4, page->va) && file_page->writable) {
-    //     file_write_at(file_page->file, page->frame->kva, file_page->read_bytes, file_page->ofs);
-    //     pml4_set_dirty(pml4, page->va, 0);
-    // }
-
-    // // 매핑 해제
-    // pml4_clear_page(pml4, page->va);
+    // 매핑 해제
+    pml4_clear_page(pml4, page->va);
 
     // TODO: 파일 닫기는 필요 시 별도 refcount 관리
-    // if (file_page->file) { file_close(file_page->file); file_page->file = NULL; }
+    // lazy-file 통과 여부, 여기서 주석 처리하면 통과함
+     (file_page->ref_count)--;
+     // 해당 파일을 참조 하고 있는 ref_count를 세어봅니다. 0이 되는경우 해당 파일의 원본이라고 전제하고 그제야 file_close가 진행됩니다.
+if (file_page->ref_count == 0) {
+    file_close(file_page->file);
+    free(file_page->ref_count);
+    file_page->file = NULL;
+}
 }
 
-/* Do the mmap */
 void* do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offset) {
 	// virtual pages starting at addr
 	void * mapped_va = addr;
@@ -172,3 +177,109 @@ void do_munmap (void *addr) {
 		addr += PGSIZE;
 	}
 }
+
+// /* Do the mmap */
+// void *
+// do_mmap (void *addr, size_t length, int writable,
+// 		struct file *file, off_t offset) {
+// 	// 하자있는 요청 내용 차단
+//     if(pg_round_down(addr) != addr) return NULL;
+//     if(length == 0) return NULL;
+//     if(offset % PGSIZE != 0) return NULL;
+//     if(file == NULL) return NULL;
+//     if(is_kernel_vaddr(addr)) return NULL;
+//     if(is_kernel_vaddr(length)) return NULL;
+	
+// 	//lock_acquire(&filesys_lock);
+//     struct file *r_file = file_reopen(file);
+//     //   if(offset + length > file_length(r_file)) return NULL;
+// 	//lock_acquire(&filesys_lock);
+//     if(addr == NULL) // called by NOT user
+//     {
+//         return NULL;
+//     }
+//     else // called by USER
+//     {
+
+//         void *start_addr = pg_round_down(addr);
+//         size_t page_cnt = (length + PGSIZE - 1) / PGSIZE;
+//         int *ref_count = malloc(sizeof(int));
+//         *ref_count = page_cnt;
+    
+//         void *current_addr = start_addr;
+//         for (size_t i = 0; i < page_cnt; i++)
+//         {
+//             // aux 구조체 생성
+//             struct file_lazy_aux *aux = malloc(sizeof(struct file_lazy_aux));
+//             aux->file = r_file;
+//             aux->ofs = offset + (i * PGSIZE);
+//             size_t remaining = length > i * PGSIZE ? length - i * PGSIZE : 0;
+//             aux->read_bytes = remaining < PGSIZE ? remaining : PGSIZE;
+//            //aux->read_bytes = length - (i * PGSIZE) < PGSIZE ? length - (i * PGSIZE) : PGSIZE;
+//             aux->zero_bytes = PGSIZE - aux->read_bytes;
+//             aux->writable = writable;
+//             aux->ref_count = ref_count;
+//         // VM_FILE 페이지 생성
+//             if (!vm_alloc_page_with_initializer(VM_FILE, current_addr, writable, lazy_load_segment, aux)) {
+//                     current_addr = start_addr;
+//                     for (size_t j = 0; j < i; j++)
+//                     {
+//                         struct page *pg = pml4_get_page(thread_current()->pml4, current_addr);
+//                         spt_remove_page(&thread_current()->spt, pg);
+//                         vm_dealloc_page(pg);
+//                         current_addr += PGSIZE;
+//                     }     
+//                 file_close(r_file);
+//                 return NULL;
+//             }
+//             else
+//             {
+//                 // only for debug
+//             }
+//             current_addr += PGSIZE;
+//         }
+//     }
+//     return addr;
+// }
+
+
+// void do_munmap (void *addr) {
+//     struct supplemental_page_table *spt = &thread_current()->spt;
+//     struct page *first_page = spt_find_page(spt, addr);
+    
+//     if (!first_page) return;
+    
+//     // uninit 페이지인 경우 파일 정보를 aux에서 가져 올 것이다
+//     struct file *target_file;
+//     if (first_page->operations->type == VM_UNINIT) {
+//         struct file_lazy_aux *aux = first_page->uninit.aux;
+//         target_file = aux->file;
+//     } else {
+//         target_file = first_page->file.file;
+//     }
+    
+//     void *cur_addr = addr;
+//     while (true) {
+//         struct page *page = spt_find_page(spt, cur_addr);
+//         if (!page) break;
+        
+//         // 파일 정보 안전하게 확인
+//         struct file *page_file;
+//         if (page->operations->type == VM_UNINIT) {
+//             struct file_lazy_aux *aux = page->uninit.aux;
+//             page_file = aux->file;
+//         } else if (page->operations->type == VM_FILE) {
+//             page_file = page->file.file;
+//         } else {
+//             break;  // 다른 타입이면 중단
+//         }
+        
+//         if (page_file != target_file) break;
+        
+//         spt_remove_page(spt, page);
+// 		//pml4_clear_page(thread_current()->pml4, page->va);
+//         vm_dealloc_page(page);
+//         cur_addr += PGSIZE;
+//     }
+// }
+

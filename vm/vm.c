@@ -424,21 +424,6 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 				memcpy(newPage->frame->kva, srcPage->frame->kva, PGSIZE);
 			
 		}
-		else if(type == VM_FILE)
-		{
-			//vm_initializer *init = srcPage->file;
-			//void *aux = srcPage->file;
-			// if(!vm_alloc_page_with_initializer(type, upage, writable, init, aux))
-			// {
-			// 	return false;
-			// }
-			// else
-			// {
-			// 	if(!vm_claim_page(upage)) return false;
-			// 	struct page *newPage = spt_find_page(dst, upage);
-			// 	memcpy(newPage->frame->kva, srcPage->frame->kva, PGSIZE);
-			// }
-		}
 	}
 	return true;
 }
@@ -449,3 +434,5 @@ supplemental_page_table_kill (struct supplemental_page_table *spt) {
 	hash_clear(&spt->main_table, NULL);
 	// temp. 좀더 정성껏 작성 할 것. 특히 파일 있는경우..
 }
+
+/* vm.c: Generic interface for virtual memory objects. */
