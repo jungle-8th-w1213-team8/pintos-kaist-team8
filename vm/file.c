@@ -4,6 +4,7 @@
 #include "threads/vaddr.h"
 #include "userprog/process.h"
 #include "threads/mmu.h"
+#include "userprog/syscall.h"
 
 /* DO NOT MODIFY this struct */
 static const struct page_operations file_ops = {
@@ -77,12 +78,9 @@ file_backed_swap_in (struct page *page, void *kva) {
 	struct file_page *file_page = &page->file;
 
         // 파일에서 데이터 읽기
-        if(file_read_at(file_page->file, kva, 
-            file_page->read_bytes, file_page->ofs) != (int)file_page->read_bytes)
-            {
-                return false;
+        if(file_read_at(file_page->file, kva, file_page->read_bytes, file_page->ofs) != (int)file_page->read_bytes)
+    		return false;
 
-            }
             
 // Zero padding
 memset(kva + file_page->read_bytes, 0, file_page->zero_bytes);
@@ -149,10 +147,11 @@ do_mmap (void *addr, size_t length, int writable,
     if(file == NULL) return NULL;
     if(is_kernel_vaddr(addr)) return NULL;
     if(is_kernel_vaddr(length)) return NULL;
-
+	
+	//lock_acquire(&filesys_lock);
     struct file *r_file = file_reopen(file);
     //   if(offset + length > file_length(r_file)) return NULL;
-
+	//lock_acquire(&filesys_lock);
     if(addr == NULL) // called by NOT user
     {
         return NULL;
@@ -202,7 +201,6 @@ do_mmap (void *addr, size_t length, int writable,
 }
 
 
-
 void do_munmap (void *addr) {
     struct supplemental_page_table *spt = &thread_current()->spt;
     struct page *first_page = spt_find_page(spt, addr);
@@ -237,6 +235,7 @@ void do_munmap (void *addr) {
         if (page_file != target_file) break;
         
         spt_remove_page(spt, page);
+		//pml4_clear_page(thread_current()->pml4, page->va);
         vm_dealloc_page(page);
         cur_addr += PGSIZE;
     }

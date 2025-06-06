@@ -53,11 +53,9 @@ static void vm_free_frame(struct frame *frame) {
 	ASSERT(frame != NULL);
 
 	lock_acquire(&g_frame_lock);
-	
 	list_remove(&frame->f_elem); // 프레임 테이블로부터 제거
 	palloc_free_page(frame->kva); // 실제 프레임을 제거
 	free(frame); // 할당했던 메모리 free 
-
 	lock_release(&g_frame_lock);
 }
 
@@ -229,41 +227,6 @@ vm_evict_frame (void) {
 /* palloc()을 호출하고 프레임을 얻습니다. 사용 가능한 페이지가 없으면 페이지를 
  * 축출(evict)하고 반환합니다. 이 함수는 항상 유효한 주소를 반환합니다. 즉, 사용자 풀
  * 메모리가 가득 차면, 이 함수는 프레임을 축출하여 사용 가능한 메모리 공간을 확보합니다.*/
-// static struct frame *
-// vm_get_frame (void) {
-// 	void *kva = palloc_get_page(PAL_USER);
-// 	struct frame *frame = NULL;
-
-// 	/* 할당 실패 시 eviction policy 집행 */
-// 	if (kva == NULL) {
-// 		frame = vm_evict_frame();
-// 		printf("debug : need to evict \n");
-// 	}
-
-// 	if(frame == NULL)
-// 	{
-// 		frame = malloc(sizeof(struct frame));
-// 		if(frame == NULL)
-// 		{
-// 			if(kva) palloc_free_page(kva);
-// 			PANIC("struct frame 할당 실패!");
-// 		}
-	
-// 	}
-
-// 	if(frame->kva != NULL)
-// 		frame->kva = kva;
-
-// 	frame->page = NULL;
-
-// 	lock_acquire(&g_frame_lock);
-// 	list_push_back(&g_frame_table, &frame->f_elem);
-// 	lock_release(&g_frame_lock);
-
-// 	ASSERT (frame != NULL);
-// 	ASSERT (frame->page == NULL);
-// 	return frame;
-// }
 static struct frame *vm_get_frame (void) {
     struct frame *frame = NULL;
     void *kva = palloc_get_page(PAL_USER);
@@ -299,16 +262,10 @@ static struct frame *vm_get_frame (void) {
 /* Growing the stack. */
 static void
 vm_stack_growth (void *addr) {
-	// void *pg_addr = pg_round_down(addr);
-    // while (vm_alloc_page(VM_ANON, pg_addr, true)) {  // SPT에 페이지 추가
-    //     struct page *pg = spt_find_page(&thread_current()->spt, pg_addr);
-    //     vm_claim_page(pg_addr);  // 물리 메모리까지 할당
-    //     pg_addr += PGSIZE;
-	// }
 	void* page_addr = pg_round_down(addr);
     struct page* page = spt_find_page(&thread_current()->spt, page_addr);
     while (page == NULL) {
-        vm_alloc_page(VM_ANON, page_addr, true);  // ← VM_ANON 생성!
+        vm_alloc_page(VM_ANON, page_addr, true);
         vm_claim_page(page_addr);
         page_addr += PGSIZE;
         page = spt_find_page(&thread_current()->spt, page_addr);

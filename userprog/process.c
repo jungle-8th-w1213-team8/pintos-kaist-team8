@@ -18,7 +18,7 @@
 #include "threads/mmu.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
-#include "vm/vm.h"
+#include "userprog/syscall.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -524,7 +524,9 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 	process_activate (thread_current ());
 
 	/* Open executable file. */
+	lock_acquire(&filesys_lock);	
 	file = filesys_open (file_name);
+	lock_release(&filesys_lock);
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
@@ -788,9 +790,6 @@ bool lazy_load_segment (struct page *page, void *aux) {
 	    // 파일 끝 확인
 		size_t file_remaining = file_length(fla->file) - fla->ofs;
 		size_t actual_read = fla->read_bytes < file_remaining ? fla->read_bytes : file_remaining;
-		
-		printf("[DEBUG] File remaining: %d, trying to read: %d, actual read: %d\n",
-			   file_remaining, fla->read_bytes, actual_read);
 		
 		file_seek(fla->file, fla->ofs);
 		off_t actually = file_read(fla->file, kva, actual_read);  // actual_read 사용!

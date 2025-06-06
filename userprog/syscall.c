@@ -198,7 +198,11 @@ bool create(const char *file, unsigned initial_size) {
  */
 bool remove(const char *file) {	
 	check_address(file);
-	return filesys_remove(file);
+	lock_acquire(&filesys_lock);
+	bool result = filesys_remove(file);
+	lock_release(&filesys_lock);
+	return result;
+	
 }
 
 /**
@@ -209,7 +213,9 @@ bool remove(const char *file) {
  */
 int open(const char *filename) {
 	check_address(filename); // 이상한 포인터면 즉시 종료
+	lock_acquire(&filesys_lock);
 	struct file *file_obj = filesys_open(filename);
+	lock_release(&filesys_lock);
 	
 	if (file_obj == NULL) {
 		return -1;
@@ -235,7 +241,10 @@ void close(int fd){
 	struct file *file_obj = process_get_file_by_fd(fd);
 	if (file_obj == NULL)
 		return;
+	lock_acquire(&filesys_lock);
 	file_close(file_obj);
+	lock_release(&filesys_lock);
+	
 	process_close_file_by_id(fd);
 }
 
