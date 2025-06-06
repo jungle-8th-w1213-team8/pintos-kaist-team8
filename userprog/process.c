@@ -543,7 +543,7 @@ static bool load (const char *file_name, struct intr_frame *if_) {
    	lock_acquire(&g_filesys_lock);	
 	/* Open executable file. */
 	file = filesys_open (file_name);
-  	lock_release(&g_filesys_lock);
+  	// lock_release(&g_filesys_lock);
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
   		// lock_release(&g_filesys_lock);
@@ -638,6 +638,7 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 done:
 	/* We arrive here whether the load is successful or not. */
 	// file_close (file); // TODO: 여기 말고 process_exit에서 닫도록 해야.
+  	lock_release(&g_filesys_lock);
 	return success;
 }
 
@@ -814,12 +815,15 @@ bool lazy_load_segment (struct page *page, void *aux) {
 	size_t page_read_bytes = fla->read_bytes;
 	size_t page_zero_bytes 	= PGSIZE - page_read_bytes;
 
+	lock_acquire(&g_filesys_lock);
     // file_read_at을 사용!
     if (file_read_at(fla->file, kva, fla->read_bytes, fla->ofs) != (int) fla->read_bytes) {
+		lock_release(&g_filesys_lock);
 		palloc_free_page(kva);
 		free(fla);
         return false;
     }
+	lock_release(&g_filesys_lock);
 
 	// 나머지는 zero fill
 	memset(kva + fla->read_bytes, 0, page_zero_bytes);

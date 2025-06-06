@@ -451,7 +451,7 @@ thread_get_recent_cpu (void) {
 	return 0;
 }
 
-// /*-- Priority donation 과제 --*/
+// // /*-- Priority donation 과제 --*/
 // void donate_priority() {
 //     struct thread *t = thread_current();
 //     int priority = t->priority;

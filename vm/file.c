@@ -38,7 +38,6 @@ static bool file_backed_swap_in (struct page *page, void *kva) {
 	size_t page_read_bytes = aux->read_bytes;
 	size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-
     lock_acquire(&g_filesys_lock);  
 	// reading the contents in from the file = load_segment
     // file_read_at을 사용!
@@ -65,8 +64,11 @@ file_backed_swap_out (struct page *page) {
 	if (pml4_is_dirty(curr->pml4, page->va)){
 		aux = (struct file_lazy_aux *) page->uninit.aux;
 
+
+    	lock_acquire(&g_filesys_lock);  
 		// writing the contents back to the file.
 		file_write_at(aux->file, page->frame->kva, aux->read_bytes, aux->ofs);
+    	lock_release(&g_filesys_lock);  
 
 		// After you swap out the page, remember to turn off the dirty bit for the page.
 		pml4_set_dirty (curr->pml4, page->va, 0);
@@ -76,25 +78,45 @@ file_backed_swap_out (struct page *page) {
 	return true;
 }
 
-
-/* Destory the file backed page. PAGE will be freed by the caller. */
+/* Destroy the file-backed page. PAGE will be freed by the caller. */
 static void
-file_backed_destroy (struct page *page) {
-	struct file_page *file_page UNUSED = &page->file;
-    // uint64_t *pml4 = thread_current()->pml4;
+file_backed_destroy(struct page *page) {
+	struct file_page *file_page = &page->file;
+	struct thread *curr = thread_current();
 
-    // // dirty면 write-back (frame이 존재할 때만)
-    // if (page->frame && pml4_is_dirty(pml4, page->va) && file_page->writable) {
-    //     file_write_at(file_page->file, page->frame->kva, file_page->read_bytes, file_page->ofs);
-    //     pml4_set_dirty(pml4, page->va, 0);
-    // }
+	// 해당 파일에 다시 쓰기 허용
+	file_allow_write(file_page->file);
 
-    // // 매핑 해제
-    // pml4_clear_page(pml4, page->va);
+	// 페이지가 dirty하고, writable한 경우 → 파일에 반영
+	if (pml4_is_dirty(curr->pml4, page->va) && page->writable) {
+		lock_acquire(&g_filesys_lock);
+		off_t written = file_write_at(file_page->file, page->frame->kva,
+		                               file_page->read_bytes, file_page->ofs);
+		lock_release(&g_filesys_lock);
 
-    // TODO: 파일 닫기는 필요 시 별도 refcount 관리
-    // if (file_page->file) { file_close(file_page->file); file_page->file = NULL; }
+		ASSERT(written == (off_t)file_page->read_bytes);
+		pml4_set_dirty(curr->pml4, page->va, false); // dirty 비트 초기화
+	}
+
+	// 사용자 페이지 매핑 제거
+	pml4_clear_page(curr->pml4, page->va);
+
+	// 프레임 해제 (공유되지 않는 구조 기준)
+	if (page->frame != NULL) {
+		struct frame *f = page->frame;
+
+		// frame table에서 제거
+		lock_acquire(&g_frame_lock);
+		list_remove(&f->f_elem);
+		lock_release(&g_frame_lock);
+
+		palloc_free_page(f->kva); // 실제 물리 페이지 해제
+		free(f);                  // frame 구조체 해제
+
+		page->frame = NULL;
+	}
 }
+
 
 /* Do the mmap */
 void* do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offset) {
