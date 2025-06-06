@@ -137,5 +137,5 @@ enum vm_type page_get_type (struct page *page);
 
 bool hash_less_standard(struct hash_elem *, struct hash_elem *);
 static inline bool is_target_stack(void* rsp, void* addr);
-
+void hash_destroy_items(struct hash_elem *e, void *aux);
 #endif  /* VM_VM_H */
