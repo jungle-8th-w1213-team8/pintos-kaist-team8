@@ -418,7 +418,12 @@ process_exit (void) {
 			close(i);
 	}
 	palloc_free_multiple(curr->fd_table, FDT_PAGES);
-	file_close(curr->running); // 현재 실행 중인 파일도 닫는다. load()에 있었던 걸 여기로 옮김.
+	if(curr->running != NULL)
+	{
+		file_allow_write(curr->running);
+		file_close(curr->running); // 현재 실행 중인 파일도 닫는다. load()에 있었던 걸 여기로 옮김.
+
+	}
 	process_cleanup ();
 	
 	sema_up(&curr->wait_sema); // 대기 중이던 부모를 깨우기
