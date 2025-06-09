@@ -14,10 +14,9 @@ static const struct page_operations file_ops = {
 };
 
 /* The initializer of file vm */
-// 옵션임. 
+// 특별히 할 건 없다
 void
-vm_file_init (void) {
-}
+vm_file_init (void) {}
 
 /* Initialize the file backed page */
 bool file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
@@ -25,14 +24,14 @@ bool file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
     ASSERT(type == VM_FILE);
 
 	page->operations = &file_ops;
-	struct file_page *file_page UNUSED = &page->file;
+	struct file_page *file_page = &page->file;
 	return true;
 }
 
 /* Swap in the page by read contents from the file. */
 static bool file_backed_swap_in (struct page *page, void *kva) {
     // page->file에 실제 정보가 다 채워져 있다면 아래처럼 직접 
-	struct file_page *file_page UNUSED = &page->file;
+	struct file_page *file_page = &page->file;
 	struct file_lazy_aux *aux = (struct file_lazy_aux *) page->uninit.aux;
 	struct file *file = aux->file;
 	off_t offset = aux->ofs;
@@ -40,11 +39,8 @@ static bool file_backed_swap_in (struct page *page, void *kva) {
 	size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
     lock_acquire(&g_filesys_lock);  
-	// reading the contents in from the file = load_segment
-    // file_read_at을 사용!
+    // file_read_at을 사용
     if (file_read_at(aux->file, kva, aux->read_bytes, aux->ofs) != (int) aux->read_bytes) {
-		// palloc_free_page(kva);
-		// free(aux);
     	lock_release(&g_filesys_lock);  
         return false;
     }
@@ -60,7 +56,7 @@ static bool file_backed_swap_out (struct page *page) {
 	struct thread *curr = thread_current();
 	struct file_lazy_aux *aux;
 
-	// 페이지가 dirty ==> 해당 파일에 write back.
+	// 페이지가 dirty? 해당 파일에 write back.
 	if (pml4_is_dirty(curr->pml4, page->va)){
 		aux = (struct file_lazy_aux *) page->uninit.aux;
 
@@ -68,7 +64,7 @@ static bool file_backed_swap_out (struct page *page) {
 		file_write_at(aux->file, page->frame->kva, aux->read_bytes, aux->ofs);
     	lock_release(&g_filesys_lock);  
 
-		// Write back 후 dirty bit를 원상 복구.
+		// Write back 후 dirty bit를 원상 복구한다
 		pml4_set_dirty (curr->pml4, page->va, 0);
 	}
 	

@@ -6,7 +6,12 @@
 #include "threads/thread.h"
 #include "lib/kernel/bitmap.h" 
 /* DO NOT MODIFY BELOW LINE */
+
 static struct disk *swap_disk;
+/* 스왑 슬롯 비트맵 */
+struct bitmap *swap_table;
+/* 한 페이지를 몇 개의 섹터로 나누어 저장할지 계산 */
+const size_t SECTORS_PER_PAGE = PGSIZE / DISK_SECTOR_SIZE;
 static bool anon_swap_in(struct page *page, void *kva);
 static bool anon_swap_out(struct page *page);
 static void anon_destroy(struct page *page);
@@ -18,11 +23,6 @@ static const struct page_operations anon_ops = {
     .destroy = anon_destroy,
     .type = VM_ANON,
 };
-
-/* 스왑 슬롯 비트맵 */
-struct bitmap *swap_table;
-/* 한 페이지를 몇 개의 섹터로 나누어 저장할지 계산 */
-const size_t SECTORS_PER_PAGE = PGSIZE / DISK_SECTOR_SIZE;
 
 /* Initialize the data for anonymous pages */
 void vm_anon_init(void) {
@@ -60,9 +60,7 @@ static bool anon_swap_in(struct page *page, void *kva) {
     int idx = anon_page->swap_idx;
 
     /* swap_idx가 유효하지 않으면 실패 */
-    if (idx < 0) {
-        return false;
-    }
+    if (idx < 0) return false;
 
     /* swap 디스크에서 512바이트씩 8번 읽어서 kva에 복사 */
     for (int i = 0; i < SECTORS_PER_PAGE; i++) {
@@ -87,7 +85,6 @@ static bool anon_swap_out(struct page *page) {
 
     if (idx == BITMAP_ERROR) {
         PANIC("Swap disk is full!");
-        return false;
     }
 
     /* 디스크에 512바이트씩 8번 기록 (kva → 디스크) */
