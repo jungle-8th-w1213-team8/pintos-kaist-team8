@@ -7,7 +7,7 @@
 #include "lib/kernel/bitmap.h" 
 /* DO NOT MODIFY BELOW LINE */
 static struct disk *swap_disk;
-static bool anon_swap_in(struct page *page, void *kva);
+static bool anon_swap_in(struct page *page, void *kva); 
 static bool anon_swap_out(struct page *page);
 static void anon_destroy(struct page *page);
 

@@ -268,8 +268,8 @@ vm_stack_growth (void *addr UNUSED) {
 			NULL            // aux 데이터 (필요 없음)
 		);
 	  
-		if (!success)
-		  PANIC("vm_stack_growth 실패! 메모리 부족?");
+		// if (!success)
+		//   PANIC("vm_stack_growth 실패! 메모리 부족?");
 }
 
 /* Handle the fault on write_protected page */
