@@ -190,8 +190,8 @@ void do_munmap (void *addr) {
             pml4_set_dirty (curr->pml4, page->va, 0);
 		}
 
-		// unmap
 		pml4_clear_page(curr->pml4, page->va);
+		// spt_remove_page(&thread_current()->spt, page);
 		addr += PGSIZE;
 	}
 }
