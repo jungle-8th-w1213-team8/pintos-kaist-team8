@@ -5,6 +5,10 @@
 */build/tests/**/*.errors
 */build/tests/**/*.result
 
+*.dsk
+*.d
+*.o
+
 # MacOS
 .DS_Store
 .AppleDouble

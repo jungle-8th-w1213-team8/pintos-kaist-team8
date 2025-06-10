@@ -7,6 +7,7 @@
 #include <string.h>
 #include "userprog/gdt.h"
 #include "userprog/tss.h"
+#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -18,9 +19,13 @@
 #include "threads/mmu.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
+#include "vm/vm.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
+
+#define MAX_ARGS 128
+#define MAX_BUF 128
 
 static void process_cleanup (void);
 static bool load (const char *file_name, struct intr_frame *if_);
@@ -226,7 +231,6 @@ static void __do_fork (void *aux) { // 여기서 aux가 부모.
      *  rax 레지스터를 0으로 설정하여 '자식 프로세스임'을 알린다.
     */
 	if_.R.rax = 0;
-
 	/* 2. Duplicate PT */
 	current->pml4 = pml4_create();
 	if (current->pml4 == NULL)
@@ -310,8 +314,22 @@ void argument_stack(char **argv, int argc, void **rsp) {
 /* Switch the current execution context to the f_name.
  * Returns -1 on fail. */
 int process_exec (void *f_name) {
-	char *file_name = f_name;
 	bool success;
+	char *file_name = f_name;
+
+	/*-- Project 2. User Programs 과제 --*/
+	// for argument parsing
+    char *parse[64]; // 파싱된 문자열(토큰)들을 저장
+    char *token, *save_ptr; // token: 현재 파싱된 문자열, save_ptr: strtok_r의 내부 상태 유지를 위한 포인터
+    int count = 0; // 파싱된 문자열의 개수
+		
+    for (token = strtok_r(file_name, " ", &save_ptr); // file_name(例: "ls -a -l")에서 첫 번째 공백(" ")을 기준으로 문자열을 자르고, 첫 번째 토큰("ls")을 token에 할당.
+			token != NULL; 							 // token이 NULL이 아닐 때까지 (더 이상 자를 문자열이 없을 때까지).
+			token = strtok_r(NULL, " ", &save_ptr)  // 다음 공백(" ")을 기준으로 문자열을 잘라, 다음 토큰을 token에 할당 (NULL을 넣어 이전 호출의 다음 지점부터 계속 파싱).
+	){
+        parse[count++] = token;
+	}
+	/*-- Project 2. User Programs 과제 --*/
 
 	/* We cannot use the intr_frame in the thread structure.
 	 * This is because when current thread rescheduled,
@@ -321,28 +339,26 @@ int process_exec (void *f_name) {
 	_if.cs = SEL_UCSEG;
 	_if.eflags = FLAG_IF | FLAG_MBS;
 
+	// lock_acquire(&g_filesys_lock);
+	// struct file *new_file = filesys_open(parse[0]);
+	// lock_release(&g_filesys_lock);
+	
 	/* We first kill the current context */
 	process_cleanup ();
+	
+	/*-- Project 3. --*/
+#ifdef VM
+	supplemental_page_table_init(&thread_current()->spt);
+#endif
+	/*-- Project 3. --*/
 
-	/*-- Project 2. User Programs 과제 --*/
-	// for argument parsing
-    char *parse[64]; // 파싱된 문자열(토큰)들을 저장
-    char *token, *save_ptr; // token: 현재 파싱된 문자열, save_ptr: strtok_r의 내부 상태 유지를 위한 포인터
-    int count = 0; // 파싱된 문자열의 개수
-		
-    for (token = strtok_r(file_name, " ", &save_ptr); // file_name(例: "ls -a -l")에서 첫 번째 공백(" ")을 기준으로 문자열을 자르고, 첫 번째 토큰("ls")을 token에 할당.
-		token != NULL; 								 // token이 NULL이 아닐 때까지 (더 이상 자를 문자열이 없을 때까지).
-		token = strtok_r(NULL, " ", &save_ptr)      // 다음 공백(" ")을 기준으로 문자열을 잘라, 다음 토큰을 token에 할당 (NULL을 넣어 이전 호출의 다음 지점부터 계속 파싱).
-	){
-        parse[count++] = token;
-	}
-	/*-- Project 2. User Programs 과제 --*/
-
+	// printf("process_exec() 함수 내부 - file_name: %s, parse[0]: %s\n",file_name,parse[0]);
+	
 	/* And then load the binary */
-	success = load (file_name, &_if);
+	success = load (parse[0], &_if);
     /* If load failed, quit. */
     if (!success){
-    	palloc_free_page(file_name);
+    	palloc_free_page(parse[0]);
         return -1;
 	}
 
@@ -381,44 +397,41 @@ int process_wait (tid_t child_tid UNUSED) {
 	
 	sema_down(&child->wait_sema); 
 	int exit_status = child->exit_status;
-	timer_msleep(1);
+	// timer_msleep(1); // 그 동안 고마웠어!
 	list_remove(&child->child_elem);
 	sema_up(&child->exit_sema);
-
-
-	// for(int i=0;i<100000000;i++)
-	// 	for(int j=0;j<10;j++);
-	// timer_msleep(2000); // 2000 ms면 뭐라도 하겠지
-	// 
-
 	return exit_status;
 }
 
 /* Exit the process. This function is called by thread_exit (). */
-void
-process_exit (void) {
+void process_exit (void) {
 	struct thread *curr = thread_current ();
 	/* TODO: Your code goes here.
-	 * TODO: Implement process termination message (see
-	 * TODO: project2/process_termination.html).
-	 * TODO: We recommend you to implement process resource cleanup here. */
+		* TODO: Implement process termination message (see
+		* TODO: project2/process_termination.html).
+		* TODO: We recommend you to implement process resource cleanup here. */
 
-	// printf("process_exit()!");
+
+	// 프로세스의 파일 디스크립터들을 닫기
 	for (int i = 2; i < FDCOUNT_LIMIT; i++) {
 		if (curr->fd_table[i] != NULL)
 			close(i);
 	}
 	palloc_free_multiple(curr->fd_table, FDT_PAGES);
-	file_close(curr->running); // 현재 실행 중인 파일도 닫는다. load()에 있었던 걸 여기로 옮김.
+
+	// 프로세스의 파일 디스크립터들만 닫았으니 이제 바이너리를 닫기
+	if (curr->running != NULL) {
+		file_allow_write(curr->running); // 잡았다 요놈!
+		file_close(curr->running);
+	}
 	process_cleanup ();
-	
+
 	sema_up(&curr->wait_sema); // 대기 중이던 부모를 깨우기
 	sema_down(&curr->exit_sema); // 자기 (부모의 시그널 대기)
 }
 
 /* Free the current process's resources. */
-static void
-process_cleanup (void) {
+static void process_cleanup (void) {
 	struct thread *curr = thread_current ();
 
 #ifdef VM
@@ -531,12 +544,23 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 		goto done;
 	process_activate (thread_current ());
 
+   	lock_acquire(&g_filesys_lock);	
 	/* Open executable file. */
 	file = filesys_open (file_name);
+  	// lock_release(&g_filesys_lock);
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
+  		// lock_release(&g_filesys_lock);
 		goto done;
 	}
+	
+	// project 2. user programs - rox ~
+	// 현재 스레드의 실행 중인 파일에 이 파일을 추가.
+	t->running = file;
+
+	// 지금 읽고 있는 실행 파일에 뭐 쓰면 안되니까.
+	file_deny_write(file); // 해당 파일을 쓰기 금지로 등록
+	// ~ project 2. user programs - rox
 
 	/* Read and verify executable header. */
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -606,14 +630,6 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 	/* TODO: Your code goes here.
 	 * TODO: Implement argument passing (see project2/argument_passing.html). */
 
-	// project 2. user programs - rox ~
-	// 현재 스레드의 실행 중인 파일에 이 파일을 추가.
-	t->running = file;
-
-	// 지금 읽고 있는 실행 파일에 뭐 쓰면 안되니까.
-	file_deny_write(file); // 해당 파일을 쓰기 금지로 등록
-	// ~ project 2. user programs - rox
-
 	/* Set up stack. */
 	if (!setup_stack (if_))
 		goto done;
@@ -626,6 +642,7 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 done:
 	/* We arrive here whether the load is successful or not. */
 	// file_close (file); // TODO: 여기 말고 process_exit에서 닫도록 해야.
+  	lock_release(&g_filesys_lock);
 	return success;
 }
 
@@ -778,11 +795,44 @@ install_page (void *upage, void *kpage, bool writable) {
  * If you want to implement the function for only project 2, implement it on the
  * upper block. */
 
-static bool
-lazy_load_segment (struct page *page, void *aux) {
+bool lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
+	ASSERT(page != NULL);
+	struct file_lazy_aux *fla = (struct file_lazy_aux *) aux;
+	ASSERT(fla != NULL);
+
+	uint8_t *kva = page->frame->kva; // page->frame는 이미 할당되어 있음
+    page->writable = fla->writable; // 쓰기 보호
+
+	// // 파일에서 read_bytes 만큼 읽어오기
+	// if (file_seek(fla->file, fla->ofs), 
+	//     file_read(fla->file, kva, fla->read_bytes) != (int) fla->read_bytes
+	// ){
+	// 	// 파일 읽기 실패
+	// 	return false;
+	// }
+	
+	struct file *file = fla->file;
+	off_t ofs = fla->ofs;
+	size_t page_read_bytes = fla->read_bytes;
+	size_t page_zero_bytes 	= PGSIZE - page_read_bytes;
+
+	lock_acquire(&g_filesys_lock);
+    // file_read_at을 사용!
+    if (file_read_at(fla->file, kva, fla->read_bytes, fla->ofs) != (int) fla->read_bytes) {
+		lock_release(&g_filesys_lock);
+		palloc_free_page(kva);
+		free(fla);
+        return false;
+    }
+	lock_release(&g_filesys_lock);
+
+	// 나머지는 zero fill
+	memset(kva + fla->read_bytes, 0, page_zero_bytes);
+
+	return true;
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -799,8 +849,7 @@ lazy_load_segment (struct page *page, void *aux) {
  *
  * Return true if successful, false if a memory allocation error
  * or disk read error occurs. */
-static bool
-load_segment (struct file *file, off_t ofs, uint8_t *upage,
+static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		uint32_t read_bytes, uint32_t zero_bytes, bool writable) {
 	ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
 	ASSERT (pg_ofs (upage) == 0);
@@ -814,30 +863,45 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		void *aux = NULL;
+		struct file_lazy_aux* fla = (struct file_lazy_aux *)malloc(sizeof(struct file_lazy_aux));
+		fla->file = file;					 // 내용이 담긴 파일 객체
+		fla->ofs = ofs;					 // 이 페이지에서 읽기 시작할 위치
+		fla->read_bytes = page_read_bytes; // 이 페이지에서 읽어야 하는 바이트 수
+		fla->zero_bytes = page_zero_bytes; // 이 페이지에서 read_bytes만큼 읽고 공간이 남아 0으로 채워야 하는 바이트 수
+		fla->writable = writable;
+
 		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
-					writable, lazy_load_segment, aux))
+					writable, lazy_load_segment, fla))
 			return false;
 
 		/* Advance. */
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
 		upage += PGSIZE;
+
+		ofs += page_read_bytes;
 	}
 	return true;
 }
 
 /* Create a PAGE of stack at the USER_STACK. Return true on success. */
-static bool
-setup_stack (struct intr_frame *if_) {
-	bool success = false;
-	void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
+static bool setup_stack (struct intr_frame *if_) {
+    bool success = false;
+    void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
 
-	/* TODO: Map the stack on stack_bottom and claim the page immediately.
-	 * TODO: If success, set the rsp accordingly.
-	 * TODO: You should mark the page is stack. */
-	/* TODO: Your code goes here */
+    // SPT에 anon page로 등록
+    success = vm_alloc_page(VM_ANON, stack_bottom, true);
+    if (!success)
+        return false;
 
-	return success;
+    // 바로 프레임 할당(클레임)
+    success = vm_claim_page(stack_bottom);
+    if (!success)
+        return false;
+	
+    // rsp를 USER_STACK으로 세팅
+    if_->rsp = USER_STACK;
+
+    return success;
 }
 #endif /* VM */

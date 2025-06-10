@@ -2,6 +2,27 @@
 #define VM_VM_H
 #include <stdbool.h>
 #include "threads/palloc.h"
+#include "kernel/hash.h"
+#include "filesys/off_t.h"
+#include "threads/synch.h"
+
+/* 전역 매크로 ~ */
+#define STACK_MAX_GAP 8
+#define STACK_MAX_SIZE (1 << 20) // 1 MB
+/* ~ 전역 매크로 */
+
+/* 전역 변수 ~ */
+static struct list g_frame_table;
+static struct lock g_frame_lock;
+/* ~ 전역 변수 */
+
+struct file_lazy_aux {
+	struct file *file;
+	off_t ofs;
+	size_t read_bytes;
+	size_t zero_bytes;
+    bool writable; // for permission bit in page table
+};
 
 enum vm_type {
 	/* page not initialized */
@@ -46,6 +67,8 @@ struct page {
 	struct frame *frame;   /* Back reference for frame */
 
 	/* Your implementation */
+	struct hash_elem page_hashelem;
+	bool writable;
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
@@ -63,6 +86,7 @@ struct page {
 struct frame {
 	void *kva;
 	struct page *page;
+	struct list_elem f_elem;
 };
 
 /* The function table for page operations.
@@ -85,6 +109,8 @@ struct page_operations {
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
 struct supplemental_page_table {
+	// struck lock lpt
+	struct hash main_table;
 };
 
 #include "threads/thread.h"
@@ -108,5 +134,8 @@ bool vm_alloc_page_with_initializer (enum vm_type type, void *upage,
 void vm_dealloc_page (struct page *page);
 bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
+
+bool hash_less_standard(struct hash_elem *, struct hash_elem *);
+static inline bool is_target_stack(void* rsp, void* addr);
 
 #endif  /* VM_VM_H */

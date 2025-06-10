@@ -105,28 +105,25 @@ kill (struct intr_frame *f) {
 	}
 }
 
-/* Page fault handler.  This is a skeleton that must be filled in
-   to implement virtual memory.  Some solutions to project 2 may
-   also require modifying this code.
+/* 페이지 폴트 핸들러. 가상 메모리를 구현하기 위해 반드시 채워져야 하는 골격입니다.
+   프로젝트 2의 일부 솔루션에서도 이 코드를 수정해야 할 수 있습니다.
 
-   At entry, the address that faulted is in CR2 (Control Register
-   2) and information about the fault, formatted as described in
-   the PF_* macros in exception.h, is in F's error_code member.  The
-   example code here shows how to parse that information.  You
-   can find more information about both of these in the
-   description of "Interrupt 14--Page Fault Exception (#PF)" in
-   [IA32-v3a] section 5.15 "Exception and Interrupt Reference". */
+   진입 시, 폴트가 발생한 주소는 CR2(제어 레지스터 2)에 있고,
+   exception.h의 PF_* 매크로에서 설명된 형식으로 포맷된 폴트에 대한 정보는
+   F의 error_code 멤버에 있습니다. 여기의 예제 코드는 해당 정보를 
+   파싱하는 방법을 보여줍니다. 이 둘에 대한 더 자세한 정보는
+   [IA32-v3a] 섹션 5.15 "예외 및 인터럽트 참조"의 
+   "인터럽트 14--페이지 폴트 예외 (#PF)" 설명에서 찾을 수 있습니다. */
 static void
 page_fault (struct intr_frame *f) {
-	bool not_present;  /* True: not-present page, false: writing r/o page. */
-	bool write;        /* True: access was write, false: access was read. */
-	bool user;         /* True: access by user, false: access by kernel. */
-	void *fault_addr;  /* Fault address. */
+	bool not_present;  /* True: 존재하지 않는 페이지, false: 읽기 전용 페이지에 쓰기. */
+	bool write;        /* True: 접근이 쓰기였음, false: 접근이 읽기였음. */
+	bool user;         /* True: 사용자에 의한 접근, false: 커널에 의한 접근. */
+	void *fault_addr;  /* 폴트 주소. */
 
-	/* Obtain faulting address, the virtual address that was
-	   accessed to cause the fault.  It may point to code or to
-	   data.  It is not necessarily the address of the instruction
-	   that caused the fault (that's f->rip). */
+	/* 폴트를 발생시킨 주소, 즉 폴트를 일으키기 위해 접근된 가상 주소를 얻습니다.
+	   이는 코드나 데이터를 가리킬 수 있습니다. 반드시 폴트를 일으킨 명령어의
+	   주소(그것은 f->rip입니다)일 필요는 없습니다. */
 
 	fault_addr = (void *) rcr2();
 
@@ -140,9 +137,8 @@ page_fault (struct intr_frame *f) {
 	write = (f->error_code & PF_W) != 0;
 	user = (f->error_code & PF_U) != 0;
 
-	// project 2. user programs: bad ~
-	exit(-1);
-	// ~ project 2. user programs: bad
+	// 30 May : VM 코드 작동을 위해서는 exit(-1)의 위치의 변경이 필요합니다.
+	// 150번대 줄 이후로 이동되었습니다
 
 #ifdef VM
 	/* For project 3 and later. */
@@ -152,7 +148,7 @@ page_fault (struct intr_frame *f) {
 
 	/* Count page faults. */
 	page_fault_cnt++;
-
+	exit(-1);
 	/* If the fault is true fault, show info and exit. */
 	printf ("Page fault at %p: %s error %s page in %s context.\n",
 			fault_addr,

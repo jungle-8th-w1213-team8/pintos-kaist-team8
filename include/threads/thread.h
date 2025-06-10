@@ -33,7 +33,7 @@ typedef int tid_t;
 /*-- Project 2. User Programs 과제. --*/
 // for system call
 #define FDT_PAGES 2                       // FDT 할당을 위한 페이지수. (thread_create, process_exit 등)
-#define FDCOUNT_LIMIT FDT_PAGES*(1 << 4)  // FD의 idx를 제한. 동료 리뷰 결과 보통 256-1536 정도의 값을 잡는 듯. 그러나 32 같은 적은 수에서도 multi-oom이 통과되어야 정상.
+#define FDCOUNT_LIMIT FDT_PAGES*(1 << 8)  // FD의 idx를 제한. 동료 리뷰 결과 보통 256-1536 정도의 값을 잡는 듯. 그러나 32 같은 적은 수에서도 multi-oom이 통과되어야 정상.
 /*-- Project 2. User Programs 과제. --*/
 
 /* A kernel thread or user process.
@@ -110,6 +110,7 @@ struct thread {
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */
 	struct supplemental_page_table spt;
+	void *rsp; // 현재 액세스가 user인지 kernel인지 확인
 #endif
 
 	/* Owned by thread.c. */

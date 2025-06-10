@@ -116,8 +116,20 @@ main (void) {
 	vm_init ();
 #endif
 
-	printf ("Boot complete.\n");
-
+	//printf ("Boot complete.\n");
+	
+	// PintOS가 "Boot complete. 출력을 자동 인식합니다. cstmze 하려면 해당 줄은 유지 하셔야해요"
+	printf("_________________________________\n");
+	printf("< ");
+	printf("ULTRA TEAM-8TH ctOS ");
+	printf ("Boot complete.");
+   printf(" >\n");
+	printf("---------------------------------\n");
+	printf("        \\   ^__^\n");
+   printf("         \\  (oo)\\_______\n");
+	printf("            (__)\\       )\\/\\\n");
+   printf("                ||----w |\n");
+	printf("                ||     ||\n");
 	/* Run actions specified on kernel command line. */
 	run_actions (argv); // 얘가 바이너리를 시작!!
 
