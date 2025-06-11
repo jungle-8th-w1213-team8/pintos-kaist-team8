@@ -115,10 +115,15 @@ main (void) {
 #ifdef VM
 	vm_init ();
 #endif
+printf ("_ __  _ __   __ _ _ __  \n");
+printf ("| '_ \\| '_ \\ / _` | '_ \\\n");
+printf ("| |_) | |_) | (_| | |_) |\n");
+printf ("| .__/| .__/ \\__,_| .__/\n");
+printf ("|_|   |_|         |_|    \n");
+//printf ("Boot complete.\n");
 
-	//printf ("Boot complete.\n");
-	
-	// PintOS가 "Boot complete. 출력을 자동 인식합니다. cstmze 하려면 해당 줄은 유지 하셔야해요"
+
+// 	// PintOS가 "Boot complete. 출력을 자동 인식합니다. cstmze 하려면 해당 줄은 유지 하셔야해요"
 	printf("_________________________________\n");
 	printf("< ");
 	printf("ULTRA TEAM-8TH ctOS ");

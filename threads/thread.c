@@ -362,12 +362,9 @@ void thread_sleep(int64_t end_tick){
     old_level = intr_disable();
     cur->wakeup_tick = end_tick; // 쓰레드에 종료틱 설정
 
-    // lock_acquire(&sleep_lock); 
     list_insert_ordered(&sleep_list, &cur->elem, thread_wakeup_tick_cmp, NULL); // 슬립리스트에 종료틱 오름차순으로 삽입
-    // lock_release(&sleep_lock);
 
     thread_block(); // 현재 쓰레드 블록
-
     intr_set_level(old_level);
 }
 
@@ -451,19 +448,6 @@ thread_get_recent_cpu (void) {
 	return 0;
 }
 
-// // /*-- Priority donation 과제 --*/
-// void donate_priority() {
-//     struct thread *t = thread_current();
-//     int priority = t->priority;
-
-//     for (int depth = 0; depth < 8; depth++) {
-//         if (t->wait_lock == NULL)
-//             break;
-
-//         t = t->wait_lock->holder;
-//         t->priority = priority;
-//     }
-// }
 void donate_priority(void) {
     struct thread *curr = thread_current();
 

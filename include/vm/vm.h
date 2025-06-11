@@ -16,12 +16,14 @@ static struct list g_frame_table;
 static struct lock g_frame_lock;
 /* ~ 전역 변수 */
 
-struct file_lazy_aux {
+struct file_info {
 	struct file *file;
 	off_t ofs;
-	size_t read_bytes;
-	size_t zero_bytes;
-    bool writable; // for permission bit in page table
+	void *upage;
+	uint32_t read_bytes;
+	uint32_t zero_bytes;
+	bool writable;
+	size_t mmap_length;
 };
 
 enum vm_type {
@@ -87,6 +89,8 @@ struct frame {
 	void *kva;
 	struct page *page;
 	struct list_elem f_elem;
+
+	int r_cnt;
 };
 
 /* The function table for page operations.
@@ -113,6 +117,11 @@ struct supplemental_page_table {
 	struct hash main_table;
 };
 
+struct frame_table
+{
+	struct list frame_list;
+};
+
 #include "threads/thread.h"
 void supplemental_page_table_init (struct supplemental_page_table *spt);
 bool supplemental_page_table_copy (struct supplemental_page_table *dst,
@@ -131,11 +140,10 @@ bool vm_try_handle_fault (struct intr_frame *f, void *addr, bool user,
 	vm_alloc_page_with_initializer ((type), (upage), (writable), NULL, NULL)
 bool vm_alloc_page_with_initializer (enum vm_type type, void *upage,
 		bool writable, vm_initializer *init, void *aux);
+		
 void vm_dealloc_page (struct page *page);
 bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
-
-bool hash_less_standard(struct hash_elem *, struct hash_elem *);
 static inline bool is_target_stack(void* rsp, void* addr);
 
 #endif  /* VM_VM_H */

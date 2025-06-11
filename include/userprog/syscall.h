@@ -13,6 +13,9 @@ void close(int fd);
 int filesize(int fd);
 int read(int fd, void *buffer, unsigned size);
 
+void munmap(void *addr);
+void *mmap(void *addr, size_t length, int writable, int fd, off_t offset);
+
 /* 전역 변수 ~ */
 struct lock g_filesys_lock;
 /* ~ 전역 변수 */

@@ -3,6 +3,7 @@
 #include "threads/palloc.h"
 #include "filesys/file.h"
 #include "vm/vm.h"
+#include "vm/file.h"
 
 #include "userprog/syscall.h"
 #include <stdio.h>
@@ -85,27 +86,35 @@ static void validate_user_memory(const void *buffer, size_t size, bool writable)
 			// 페이지 폴트 처리
 			if (!vm_try_handle_fault(NULL, addr, true, writable, true))
 				exit(-1);
-		} else if (writable) {
-			/**
-			 * 상세 설명
-			 *
-			 * 이미 매핑되어 있는 페이지의 경우, 쓰기 권한이 실제로 존재하는지 확인해야 한다.
-			 * 이는 단순히 pml4에 해당 가상 주소가 존재하는지만 확인하는 것으로는 충분하지 않다.
-			 * 
-			 * 가령, 코드 영역처럼 읽기만 가능하고 쓰기 권한이 없는 페이지는 
-			 * 유효한 매핑을 가지고 있을 수 있지만, 
-			 * 그 주소에 write하려고 하면 segmentation fault가 발생해야 한다.
-			 * 
-			 * 고로, writable == true인 경우에는 해당 PTE를 직접 추적하여
-			 * pte의 writable bit를 확인한다.
-			 * 
-			 *   - pml4e_walk(): 해당 가상 주소에 대한 최종 PTE를 획득.
-			 *   - is_writable(): 얻은 PTE가 쓰기 가능한지를 확인.
-			 */
-			uint64_t *pte = pml4e_walk(curr->pml4, (uint64_t)addr, false);
-			if (pte == NULL || !is_writable(pte))
-				exit(-1);
-		}
+		} else
+			{
+				if (writable) {
+					/**
+					 * 상세 설명
+					 *
+					 * 이미 매핑되어 있는 페이지의 경우, 쓰기 권한이 실제로 존재하는지 확인해야 한다.
+					 * 이는 단순히 pml4에 해당 가상 주소가 존재하는지만 확인하는 것으로는 충분하지 않다.
+					 * 
+					 * 가령, 코드 영역처럼 읽기만 가능하고 쓰기 권한이 없는 페이지는 
+					 * 유효한 매핑을 가지고 있을 수 있지만, 
+					 * 그 주소에 write하려고 하면 segmentation fault가 발생해야 한다.
+					 * 
+					 * 고로, writable == true인 경우에는 해당 PTE를 직접 추적하여
+					 * pte의 writable bit를 확인한다.
+					 * 
+					 *   - pml4e_walk(): 해당 가상 주소에 대한 최종 PTE를 획득.
+					 *   - is_writable(): 얻은 PTE가 쓰기 가능한지를 확인.
+					 */
+					uint64_t *pte = pml4e_walk(curr->pml4, (uint64_t)addr, false);
+					struct page *cur_page = spt_find_page(&thread_current()->spt, addr);
+					bool page_writable = cur_page->writable;
+					if (pte == NULL || !is_writable(pte) && !page_writable)
+						exit(-1);
+					// if (pte == NULL || !is_writable(pte) && !page_writable)
+					// 	exit(-1);
+				}
+			
+			}
 	}
 }
 
@@ -150,57 +159,86 @@ void validate_buffer(const void *user_addr, size_t size) {
 /**
  * mmap
  */
-void* mmap(void *addr, size_t length, int writable, int fd, off_t offset){
-	#ifdef VM
-	struct thread *curr = thread_current();
-	struct file *file;
 
-	// may fail if the file opened as fd has a length of zero bytes
-	if ((long long)length <= 0)
-		return NULL;
-
-	// must fail if addr is not page-aligned
-	if (pg_round_down(addr) != addr)
-		return NULL;
-
-	// Tries to mmap an invalid offset
-	if (offset > (off_t)length)
-		return NULL;
-
-	if (offset % PGSIZE != 0)
-		return NULL;
-
-	// must fail if overlaps any existing set of mapped pages
-	if (spt_find_page(&curr->spt, addr))
-		return NULL;
-
-	// if addr is 0, it must fail
-	if (addr == NULL)
-		return NULL;
-	
-	// try to mmap over kernel
-	// addr이 커널 시작 주소인지 || 64비트 이상으로 사용하는지
-	if ((long long)addr == KERN_BASE || is_kernel_vaddr(addr))
-		return NULL;
-
-	// the fd representing console input and output are not mappable.
-	if (fd == 0 || fd == 1)
-		return NULL;
-
-	// file open as fd
-	if (!(file = curr->fd_table[fd]))
-		return NULL;
-
-	return do_mmap(addr, length, writable, file, offset);
-	#endif
-}
-
-void munmap(void *addr){
-	#ifdef VM
-	do_munmap(addr);
-	#endif
-}
-
+ void munmap(void *addr)
+ {
+	 /** TODO: mmap으로 매핑된 모든 페이지를 없애야함
+	  * 1. SPT에서 제거
+	  * 2. 물리 페이지에서도 제거
+	  * 3. 매핑 카운트나 page 구조체 내의 카운트를 사용해서 제거
+	  */
+ 
+	 struct thread *thread = thread_current(); 
+	 struct page * page=spt_find_page(&thread->spt, addr);
+ 
+	 struct file_info *aux = (struct file_info *)page->file.aux;
+	 size_t target_length = aux->mmap_length;
+ 
+	 void *start_addr = addr;
+	 void *cur_addr = addr;
+	 void *end_addr = addr + target_length;
+ 
+	 for (cur_addr = start_addr; cur_addr < end_addr; cur_addr += PGSIZE) {
+		 do_munmap(cur_addr);
+	 }
+ 
+ }
+ 
+ /*
+ 매핑 성공시 매핑된 가상 주소 addr을 반환, 실패시 NULL 반환 
+ */
+ void *mmap(void *addr, size_t length, int writable, int fd, off_t offset)
+ {
+	 // addr NULL, 페이지 정렬, 0주소 금지
+	 if (addr == NULL || !is_user_vaddr(addr) || (uint64_t)addr == 0 || (uint64_t)addr % PGSIZE != 0)
+		 return NULL;
+ 
+	 // fd가 0, 1(콘솔)이거나 음수거나 MAX_FD 넘어가면 실패
+	 if (fd == 0 || fd == 1 || fd < 0 || fd >= 64)
+		 return NULL;
+ 
+	 // 파일 포인터 확인
+	 struct file *file = thread_current()->fd_table[fd];
+	 if (file == NULL)
+		 return NULL;
+ 
+	 // offset은 반드시 페이지 정렬
+	 if (offset % PGSIZE != 0)
+		 return NULL;
+ 
+	 // 파일 사이즈, length 검사 (이제 file은 NULL 아님이 보장됨)
+	 int fs = filesize(fd); 
+	 if (fs == 0 || length == 0 || length > (uintptr_t)addr)
+		 return NULL;
+ 
+	 // 매핑하려는 주소 영역 중복 검사
+	 void *end_page = addr + length;
+	 for (void *page = addr; page < end_page; page += PGSIZE)
+	 {
+		 if (spt_find_page(&thread_current()->spt, page) != NULL)
+			 return NULL;
+	 }
+ 
+	 /* 파일 디스크립터 fd 로 열린 파일의 offset 바이트부터 length 바이트만큼 
+	 프로세스의 가상 주소 공간의 addr 부터 매핑한다. 매핑은 페이지 단위로 이루어짐
+	 */
+	 size_t remain_length = length;
+	 void *cur_addr = addr;
+	 off_t cur_offset = offset;
+ 
+	 while (remain_length > 0)
+	 {	
+		 size_t allocate_length = remain_length > PGSIZE ? PGSIZE : remain_length;
+		 if(do_mmap(cur_addr, allocate_length, writable, thread_current()->fd_table[fd], cur_offset, length)==NULL)
+			 return NULL;
+		 if(remain_length<allocate_length) break;
+		 remain_length -= allocate_length;
+		 cur_addr += allocate_length;
+		 cur_offset += allocate_length;
+	 }
+ 
+	 return addr;
+ }
 /**
  * halt - 머신을 halt함.
  * 
@@ -415,12 +453,8 @@ int filesize(int fd) {
  */
 int read(int fd, void *buffer, unsigned size){
 	// 1. 버퍼를 검증
-    validate_write_buffer(buffer, size); // 이거 validate_write_buffer라고 쓴 거 맞습니다!!!!!
-
-    if (size == 0)
-        return 0;
-    // if (buffer == NULL || !is_user_vaddr(buffer))
-    //     exit(-1);
+    validate_write_buffer(buffer, size);
+    if (size == 0) return 0;
 
     // 2. stdin (fd == 0)일 경우
     if (fd == STDIN_FILENO) {
@@ -432,8 +466,7 @@ int read(int fd, void *buffer, unsigned size){
     }
 
     // 3. fd 범위 검사
-    if (fd < 2 || fd >= FDCOUNT_LIMIT)
-        return -1;
+    if (fd < 2 || fd >= FDCOUNT_LIMIT) return -1;
 
     struct file *file = process_get_file_by_fd(fd);
     if (file == NULL)
@@ -547,9 +580,8 @@ void syscall_handler (struct intr_frame *f UNUSED) {
 			munmap((void *)f->R.rdi);
 			break;
 		default:
-			printf("FATAL: UNDEFINED SYSTEM CALL!, %d", sys_call_number);
+			printf("겁나 심각: UNDEFINED SYSTEM CALL!, %d", sys_call_number);
 			exit(-1);
 			break;
 	}
-	// thread_exit ();
 }

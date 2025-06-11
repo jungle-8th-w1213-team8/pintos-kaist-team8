@@ -33,9 +33,9 @@ static void initd (void *f_name);
 static void __do_fork (void *);
 
 /* General process initializer for initd and other process. */
-static void process_init (void) {
+static void process_init (void)
+{
 	struct thread *curr = thread_current ();
-
 }
 
 // 파일 객체에 대한 파일 디스크립터를 생성, 프로세스에 추가, 해당 fd 리턴
@@ -796,43 +796,27 @@ install_page (void *upage, void *kpage, bool writable) {
  * upper block. */
 
 bool lazy_load_segment (struct page *page, void *aux) {
-	/* TODO: Load the segment from the file */
-	/* TODO: This called when the first page fault occurs on address VA. */
-	/* TODO: VA is available when calling this function. */
-	ASSERT(page != NULL);
-	struct file_lazy_aux *fla = (struct file_lazy_aux *) aux;
-	ASSERT(fla != NULL);
+	struct file_info *fi = aux;
+    struct file *file = fi->file;
+    off_t ofs = fi->ofs;
+    uint8_t *kva = page->frame->kva;
 
-	uint8_t *kva = page->frame->kva; // page->frame는 이미 할당되어 있음
-    page->writable = fla->writable; // 쓰기 보호
+    // 파일의 남은 크기 계산 (여기서 file_length(file)은 file의 전체크기임.)
+    size_t file_remaining = file_length(file) - ofs;
+    size_t page_read_bytes = fi->read_bytes < PGSIZE ? fi->read_bytes : PGSIZE;
+    page_read_bytes = page_read_bytes < file_remaining ? page_read_bytes : file_remaining;
+    size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-	// // 파일에서 read_bytes 만큼 읽어오기
-	// if (file_seek(fla->file, fla->ofs), 
-	//     file_read(fla->file, kva, fla->read_bytes) != (int) fla->read_bytes
-	// ){
-	// 	// 파일 읽기 실패
-	// 	return false;
-	// }
-	
-	struct file *file = fla->file;
-	off_t ofs = fla->ofs;
-	size_t page_read_bytes = fla->read_bytes;
-	size_t page_zero_bytes 	= PGSIZE - page_read_bytes;
-
-	lock_acquire(&g_filesys_lock);
-    // file_read_at을 사용!
-    if (file_read_at(fla->file, kva, fla->read_bytes, fla->ofs) != (int) fla->read_bytes) {
-		lock_release(&g_filesys_lock);
-		palloc_free_page(kva);
-		free(fla);
-        return false;
+    int bytes_read = file_read_at(file, kva, page_read_bytes, ofs);    if (bytes_read == (int)page_read_bytes) {
+        memset(kva + page_read_bytes, 0, page_zero_bytes);
+        return true;
+    } else if (bytes_read >= 0) {
+        // 파일의 끝에 도달한 경우: 읽은 만큼만 0으로 채움
+        memset(kva + bytes_read, 0, page_zero_bytes + (page_read_bytes - bytes_read));
+        return true;
     }
-	lock_release(&g_filesys_lock);
-
-	// 나머지는 zero fill
-	memset(kva + fla->read_bytes, 0, page_zero_bytes);
-
-	return true;
+    return false;
+ 
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -849,40 +833,76 @@ bool lazy_load_segment (struct page *page, void *aux) {
  *
  * Return true if successful, false if a memory allocation error
  * or disk read error occurs. */
-static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
-		uint32_t read_bytes, uint32_t zero_bytes, bool writable) {
-	ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
-	ASSERT (pg_ofs (upage) == 0);
-	ASSERT (ofs % PGSIZE == 0);
+// static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
+// 		uint32_t read_bytes, uint32_t zero_bytes, bool writable) {
+// 	ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
+// 	ASSERT (pg_ofs (upage) == 0);
+// 	ASSERT (ofs % PGSIZE == 0);
 
-	while (read_bytes > 0 || zero_bytes > 0) {
-		/* Do calculate how to fill this page.
-		 * We will read PAGE_READ_BYTES bytes from FILE
-		 * and zero the final PAGE_ZERO_BYTES bytes. */
-		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
-		size_t page_zero_bytes = PGSIZE - page_read_bytes;
+// 	while (read_bytes > 0 || zero_bytes > 0) {
+// 		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+// 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+// 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
+// 		struct file_info* fla = (struct file_info *)malloc(sizeof(struct file_info));
+// 		fla->file = file;					 // 내용이 담긴 파일 객체
+// 		fla->ofs = ofs;					 // 이 페이지에서 읽기 시작할 위치
+// 		fla->read_bytes = page_read_bytes; // 이 페이지에서 읽어야 하는 바이트 수
+// 		fla->zero_bytes = page_zero_bytes; // 이 페이지에서 read_bytes만큼 읽고 공간이 남아 0으로 채워야 하는 바이트 수
+// 		fla->writable = writable;
+
+// 		if (!vm_alloc_page_with_initializer (VM_ANON, upage, writable, lazy_load_segment, fla))
+// 			return false;
+
+// 		/* Advance. */
+// 		read_bytes -= page_read_bytes;
+// 		zero_bytes -= page_zero_bytes;
+// 		ofs += page_read_bytes;
+// 		upage += PGSIZE;
+// 	}
+// 	return true;
+// }
+
+static bool
+load_segment(struct file *file, off_t ofs, uint8_t *upage,
+			 uint32_t read_bytes, uint32_t zero_bytes, bool writable)
+{
+	ASSERT((read_bytes + zero_bytes) % PGSIZE == 0);
+	ASSERT(pg_ofs(upage) == 0);
+	ASSERT(ofs % PGSIZE == 0);
+
+	while (read_bytes > 0 || zero_bytes > 0)
+	{
+		/* 이 페이지를 어떻게 채울지 계산합니다.
+		 * FILE에서 PAGE_READ_BYTES 바이트를 읽고
+		 * 남은 PAGE_ZERO_BYTES 바이트는 0으로 초기화합니다. */
+		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE; // 4KB까지만 읽어라
+		size_t page_zero_bytes = PGSIZE - page_read_bytes;					// 0 패딩 사이즈는 4KB - read_byte
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		struct file_lazy_aux* fla = (struct file_lazy_aux *)malloc(sizeof(struct file_lazy_aux));
-		fla->file = file;					 // 내용이 담긴 파일 객체
-		fla->ofs = ofs;					 // 이 페이지에서 읽기 시작할 위치
-		fla->read_bytes = page_read_bytes; // 이 페이지에서 읽어야 하는 바이트 수
-		fla->zero_bytes = page_zero_bytes; // 이 페이지에서 read_bytes만큼 읽고 공간이 남아 0으로 채워야 하는 바이트 수
-		fla->writable = writable;
+		struct file_info *aux= malloc(sizeof(struct file_info));
+		if(aux==NULL) return false;
 
-		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
-					writable, lazy_load_segment, fla))
+		aux->file=file_reopen(file);
+		aux->ofs=ofs;
+		aux->upage=upage;
+		aux->read_bytes=read_bytes;
+		aux->zero_bytes=zero_bytes;
+		aux->writable=writable;
+		
+		if (!vm_alloc_page_with_initializer(VM_ANON, upage,
+											writable, lazy_load_segment, aux))
 			return false;
 
 		/* Advance. */
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
+		ofs+=page_read_bytes;
 		upage += PGSIZE;
-
-		ofs += page_read_bytes;
 	}
 	return true;
 }
+
 
 /* Create a PAGE of stack at the USER_STACK. Return true on success. */
 static bool setup_stack (struct intr_frame *if_) {
