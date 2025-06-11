@@ -148,6 +148,20 @@ void validate_buffer(const void *user_addr, size_t size) {
 
 
 /**
+ * 파일 디스크립터(fd)에 해당하는 파일의 현재 오프셋(읽기/쓰기 위치)을 반환.
+ *
+ * @param fd 파일 디스크립터
+ * @return 파일의 현재 오프셋(바이트 단위), 파일이 없으면 -1 반환
+ */
+int tell(int fd) {
+	struct file *file = process_get_file_by_fd(fd);
+	if (file == NULL)
+		return -1;
+
+	return file_tell(file);
+}
+
+/**
  * mmap
  */
 void* mmap(void *addr, size_t length, int writable, int fd, off_t offset){
@@ -531,7 +545,7 @@ void syscall_handler (struct intr_frame *f UNUSED) {
 			break;
 		case SYS_TELL:
 			// printf("SYS_TELL [%d]\n", sys_call_number);
-			// f->R.rax = tell(f->R.rdi);
+			f->R.rax = tell(f->R.rdi);
 			// printf("tell() undefined! [%d]", sys_call_number);
 			break;
 		case SYS_CLOSE:
